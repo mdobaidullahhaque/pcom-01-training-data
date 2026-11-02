@@ -13,8 +13,25 @@ TARGET_DAYS = 90
 M0_IS_MOST_RECENT = True
 
 # --- Package selection --------------------------------------------------------
-TEST_SAMPLE_SIZE = 20
-TARGET_PACKAGE_COUNT = 1000
+RANDOM_SEED = 42
+SAMPLE_PER_STRATUM = 500
+POPULAR_MIN_DOWNLOADS = 1_000_000  # feature-year downloads, at least
+RANDOM_MIN_DOWNLOADS = 1_000  # feature-year downloads, at least
+RANDOM_MAX_DOWNLOADS = 1_000_000  # feature-year downloads, under
+TEST_LIST_COUNTS = {"had_ghsa": 8, "popular_no_ghsa": 6, "random_no_ghsa": 6}
+# Name lists published before t0, so that choosing candidates uses no later information.
+POPULAR_SOURCE = {
+    "name": "npm-high-impact",
+    "version": "1.11.0",
+    "published_at": "2025-06-05T06:37:15.400Z",
+    "shasum": "12c22a769f9f452d9750bd71cf065f3271f4873e",
+}
+RANDOM_SOURCE = {
+    "name": "all-the-package-names",
+    "version": "2.0.2159",
+    "published_at": "2025-07-31T00:10:49.958Z",
+    "shasum": "af5e529462f6aff895e53e4325d1be2edd4d5b09",
+}
 
 # --- Vulnerabilities ----------------------------------------------------------
 SEVERITIES = ["low", "moderate", "high", "critical", "unknown"]
@@ -40,6 +57,11 @@ ALLOWED_BLOCKED_ADVISORIES = frozenset({
 # --- External services --------------------------------------------------------
 NPM_REGISTRY_URL = "https://registry.npmjs.org"
 NPM_DOWNLOADS_URL = "https://api.npmjs.org/downloads/range"
+NPM_DOWNLOADS_POINT_URL = "https://api.npmjs.org/downloads/point"
+NPM_BULK_MAX_NAMES = 128
+USER_AGENT = "pcom-01-training-data (university coursework)"
+REQUEST_DELAY_SECONDS = 1.0  # 0.25 s drew HTTP 429 from the npm downloads API
+MAX_RETRIES = 6
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 # Name of the environment variable only. The token itself is never stored in a file.
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
@@ -54,7 +76,11 @@ ADVISORY_SNAPSHOTS_JSON = CACHE_DIR / "advisory_snapshots.json"
 ADVISORIES_SQLITE = CACHE_DIR / "advisories.sqlite"
 ALLOWED_BLOCKED_FILES_JSON = DATA_DIR / "allowed_blocked_files.json"  # committed, public info only
 LOG_DIR = ROOT / "logs"
+HTTP_CACHE_DIR = CACHE_DIR / "http"
+SOURCES_DIR = CACHE_DIR / "sources"
 PACKAGES_CSV = DATA_DIR / "packages.csv"
+PACKAGES_TEST_CSV = DATA_DIR / "packages_test.csv"
+SELECTION_STATS_JSON = DATA_DIR / "packages_selection_stats.json"
 OUTPUT_SQLITE = DATA_DIR / "pcom01_training.sqlite"
 OUTPUT_CSV = DATA_DIR / "pcom01_training.csv"
 
