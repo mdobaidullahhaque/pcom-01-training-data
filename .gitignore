@@ -1,0 +1,17 @@
+# Raw API responses and advisory DB clone
+data/cache/
+
+# Logs
+logs/
+
+# Virtual environments
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets
+.env
