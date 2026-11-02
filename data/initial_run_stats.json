@@ -1,0 +1,98 @@
+{
+  "seed": 42,
+  "budget_minutes": 40,
+  "metadata_minutes": 40.0,
+  "packages_total": 3771,
+  "packages_reached": 1931,
+  "packages_included": 1912,
+  "packages_not_reached": 1840,
+  "skipped": 19,
+  "skip_reasons": {
+    "fully unpublished": 16,
+    "no version before t0 still has a manifest": 3
+  },
+  "skipped_packages": [
+    {
+      "package_name": "ripmed160",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "files-bucket-server",
+      "reason": "no version before t0 still has a manifest"
+    },
+    {
+      "package_name": "n158",
+      "reason": "no version before t0 still has a manifest"
+    },
+    {
+      "package_name": "wbe3",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "scrytsy",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "corenlp-js-interface",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "text-qrcode",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "storefront-api",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "modlibrary",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "wallet-address-vaildator",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "simple-npm-registry",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "web3-eht",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "scryptys",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "corenlp-js-prefab",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "blingjs",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "ripedm160",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "tooljet",
+      "reason": "no version before t0 still has a manifest"
+    },
+    {
+      "package_name": "nextchat",
+      "reason": "fully unpublished"
+    },
+    {
+      "package_name": "siganle",
+      "reason": "fully unpublished"
+    }
+  ],
+  "packages_without_download_data": 0,
+  "download_cross_check": {
+    "checked": 524,
+    "mismatches": 0
+  },
+  "packument_cache_megabytes": 200
+}
