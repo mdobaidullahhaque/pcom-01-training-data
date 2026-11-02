@@ -1,0 +1,63 @@
+{
+  "seed": 42,
+  "feature_year": "2024-08-01:2025-07-31",
+  "sources": {
+    "popular_no_ghsa": {
+      "name": "npm-high-impact",
+      "version": "1.11.0",
+      "published_at": "2025-06-05T06:37:15.400Z",
+      "shasum": "12c22a769f9f452d9750bd71cf065f3271f4873e"
+    },
+    "random_no_ghsa": {
+      "name": "all-the-package-names",
+      "version": "2.0.2159",
+      "published_at": "2025-07-31T00:10:49.958Z",
+      "shasum": "af5e529462f6aff895e53e4325d1be2edd4d5b09"
+    }
+  },
+  "strata": {
+    "popular_no_ghsa": {
+      "pool": 8948,
+      "checked": 556,
+      "unknown": [
+        "@taktikorg/itaque-tempore-exercitationem",
+        "@diahkomalasarinpm/occaecati-incidunt-dolor-accusantium",
+        "@hishprorg/wafflejs",
+        "@diotoborg/porro-modi-accusamus"
+      ]
+    },
+    "random_no_ghsa": {
+      "pool": 3519765,
+      "checked": 3412,
+      "unknown": [
+        "test-dsr-luges-segno-beget-grump",
+        "@blasic/max-orders-cart-calculator",
+        "@gibme/stir-shaken",
+        "@preply/scout",
+        "thank-bottle-comfortable-everybody",
+        "dsr-rollback-where-flirt-umpty-waxen",
+        "ehxyla-fewer-brown-government",
+        "dsr-rollback-jails-bawdy-beech-pawls",
+        "test-dsr-needs-hauds-ardeb-terra",
+        "@wtheff/auth",
+        "bingo-blitz-free-download198",
+        "@royaltics/chat-react-sails",
+        "test-dsr-roses-panne-talon-spill",
+        "zhengw513tool",
+        "sharp-avoid-drove",
+        "@getweysofficial/secura-uikit",
+        "dsr-package-public-golds-sedum-ouzos-hillo",
+        "dsr-rollback-etens-deils-ached-pupae",
+        "@guion/use-wallet-react",
+        "@subnoto/pdf-sign-wasm",
+        "@cognam/btn-container",
+        "@diahkomalasarinpm/eligendi-quam-placeat",
+        "@namehash/nameguard",
+        "dsr-package-louts-gulph-baton-vespa",
+        "tg-dlia-zarabotka-s-vlozheniiami-ixijtitv",
+        "@iliesw/aura-cli",
+        "@wings-j/file"
+      ]
+    }
+  }
+}
