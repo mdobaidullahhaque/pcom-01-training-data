@@ -44,7 +44,7 @@ def monthly_columns(family, required):
 def build_columns():
     # Metadata
     columns = [
-        "purl TEXT NOT NULL CHECK (length(purl) <= 2048) CHECK (purl LIKE 'pkg:npm/%')",
+        "purl TEXT NOT NULL CHECK (length(purl) <= 2048) CHECK (purl GLOB 'pkg:npm/*')",
         "package_created_at TEXT NOT NULL",
         "published_at TEXT NOT NULL",
     ]

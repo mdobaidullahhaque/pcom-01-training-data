@@ -105,7 +105,10 @@ def test_same_purl_at_another_prediction_date_is_accepted(db):
     insert(db, {**row, "prediction_date": "2025-11-01T00:00:00.000Z"})
 
 
-@pytest.mark.parametrize("purl", ["react@19.1.0", "pkg:pypi/react@19.1.0", "pkg:npm/" + "a" * 2041])
+@pytest.mark.parametrize(
+    "purl",
+    ["react@19.1.0", "pkg:pypi/react@19.1.0", "PKG:NPM/react@1.0.0", "pkg:npm/" + "a" * 2041],
+)
 def test_invalid_purl_rejected(db, purl):
     with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
         insert(db, {**valid_row(db), "purl": purl})

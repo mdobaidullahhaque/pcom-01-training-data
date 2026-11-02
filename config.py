@@ -20,6 +20,22 @@ TARGET_PACKAGE_COUNT = 1000
 SEVERITIES = ["low", "moderate", "high", "critical", "unknown"]
 ADVISORY_DB_URL = "https://github.com/github/advisory-database"
 ADVISORY_SUBDIR = "advisories/github-reviewed"
+ADVISORY_COMMITS_API = "https://api.github.com/repos/github/advisory-database/commits"
+SNAPSHOT_SIZE_LIMIT_BYTES = 1024**3  # 1 GB per snapshot
+GITHUB_ADVISORIES_API = "https://api.github.com/advisories"
+# Windows Defender quarantines these advisory files on this machine when they are read, even
+# with a folder exclusion. GitHub's API lists all 7 as non-npm (composer or pip), so losing them
+# cannot change npm counts. src/advisories.py never opens them, logs them on every run, and
+# fails if the API reports npm for one. Any other missing file is still a hard failure.
+ALLOWED_BLOCKED_ADVISORIES = frozenset({
+    "GHSA-88xg-v53p-fpvf",
+    "GHSA-v22v-xwh7-2vrm",
+    "GHSA-3pgc-xqg9-cfr6",
+    "GHSA-vf3q-frmr-vrr9",
+    "GHSA-vp2f-cqqp-478j",
+    "GHSA-wx9m-wx4f-4cmg",
+    "GHSA-gxmj-r5rf-ggwq",
+})
 
 # --- External services --------------------------------------------------------
 NPM_REGISTRY_URL = "https://registry.npmjs.org"
@@ -33,7 +49,10 @@ ROOT = Path(__file__).resolve().parent
 SCHEMA_PATH = ROOT / "schema" / "schema.sql"
 DATA_DIR = ROOT / "data"
 CACHE_DIR = DATA_DIR / "cache"
-ADVISORY_DB_DIR = CACHE_DIR / "advisory-database"
+ADVISORY_SNAPSHOT_DIR = CACHE_DIR / "advisory-db"
+ADVISORY_SNAPSHOTS_JSON = CACHE_DIR / "advisory_snapshots.json"
+ADVISORIES_SQLITE = CACHE_DIR / "advisories.sqlite"
+ALLOWED_BLOCKED_FILES_JSON = DATA_DIR / "allowed_blocked_files.json"  # committed, public info only
 LOG_DIR = ROOT / "logs"
 PACKAGES_CSV = DATA_DIR / "packages.csv"
 OUTPUT_SQLITE = DATA_DIR / "pcom01_training.sqlite"

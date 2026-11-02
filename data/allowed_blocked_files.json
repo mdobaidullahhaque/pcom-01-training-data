@@ -1,0 +1,23 @@
+{
+  "GHSA-88xg-v53p-fpvf": [
+    "composer"
+  ],
+  "GHSA-v22v-xwh7-2vrm": [
+    "composer"
+  ],
+  "GHSA-3pgc-xqg9-cfr6": [
+    "composer"
+  ],
+  "GHSA-vf3q-frmr-vrr9": [
+    "composer"
+  ],
+  "GHSA-vp2f-cqqp-478j": [
+    "composer"
+  ],
+  "GHSA-wx9m-wx4f-4cmg": [
+    "pip"
+  ],
+  "GHSA-gxmj-r5rf-ggwq": [
+    "composer"
+  ]
+}
