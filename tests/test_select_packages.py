@@ -119,7 +119,7 @@ def test_http_client_retries_then_caches(tmp_path, monkeypatch):
     responses = [FakeResponse(429, {}), FakeResponse(404, {"error": "missing"})]
     calls = []
 
-    def fake_get(url, timeout):
+    def fake_get(url, timeout, headers):
         calls.append(url)
         return responses.pop(0)
 
@@ -131,7 +131,7 @@ def test_http_client_retries_then_caches(tmp_path, monkeypatch):
 
 
 def test_http_client_gives_up_loudly_and_does_not_cache(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.http_client._session.get", lambda url, timeout: FakeResponse(503, {}))
+    monkeypatch.setattr("src.http_client._session.get", lambda url, timeout, headers: FakeResponse(503, {}))
     monkeypatch.setattr("src.http_client.time.sleep", lambda seconds: None)
     with pytest.raises(RuntimeError, match="Giving up"):
         get_json("https://example.test/y", tmp_path)

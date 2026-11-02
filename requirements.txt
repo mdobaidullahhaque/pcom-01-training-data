@@ -1,3 +1,4 @@
 requests>=2.32
 tqdm>=4.66
 pytest>=8.0
+semver>=3.1,<4
