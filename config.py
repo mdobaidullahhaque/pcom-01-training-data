@@ -65,6 +65,10 @@ MAX_RETRIES = 6
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 # Name of the environment variable only. The token itself is never stored in a file.
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
+GITHUB_PAGE_SIZE = 100
+GITHUB_MIN_POINTS = 100  # wait for the rate-limit reset below this many remaining points
+GITHUB_MAX_REPO_MINUTES = 30  # larger repos are held back until the user approves them
+GITHUB_DEFAULT_SECONDS_PER_PAGE = 3.0  # until a real rate has been measured in the run
 
 # --- Paths --------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent
@@ -83,6 +87,8 @@ FEATURES_DIR = CACHE_DIR / "features"
 NPM_META_CSV = FEATURES_DIR / "npm_meta.csv"
 NPM_DOWNLOADS_CSV = FEATURES_DIR / "npm_downloads.csv"
 GHSA_FEATURES_CSV = FEATURES_DIR / "ghsa_features.csv"
+GITHUB_ACTIVITY_CSV = FEATURES_DIR / "github_activity.csv"
+GITHUB_CACHE_DIR = CACHE_DIR / "github"
 PACKAGES_CSV = DATA_DIR / "packages.csv"
 PACKAGES_TEST_CSV = DATA_DIR / "packages_test.csv"
 SELECTION_STATS_JSON = DATA_DIR / "packages_selection_stats.json"
