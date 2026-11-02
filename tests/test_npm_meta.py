@@ -161,6 +161,15 @@ def test_build_row_formats_timestamps_and_keeps_missing_sizes_null():
     assert set(row) == set(nm.COLUMNS)
 
 
+@pytest.mark.parametrize(
+    "version, expected",
+    [("0.0.1-security", 1), ("0.0.12-security", 1), ("1.0.0", 0), ("0.0.1", 0), ("1.0.0-security", 0), ("0.0.1-security.2", 0)],
+)
+def test_security_placeholder_flag(version, expected):
+    row, _ = nm.build_row("a", packument({version: BEFORE}), T0)
+    assert row["is_security_placeholder"] == expected
+
+
 def test_features_contain_no_post_t0_information():
     early = packument({"1.0.0": BEFORE})
     later = packument({"1.0.0": BEFORE, "2.0.0": AFTER, "3.0.0": "2026-01-01T00:00:00Z"})

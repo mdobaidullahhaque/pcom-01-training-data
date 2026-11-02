@@ -8,6 +8,7 @@ Usage: python -u -m src.npm_meta [--packages data/packages_test.csv]
 import argparse
 import csv
 import logging
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -22,10 +23,14 @@ TIME_METADATA_KEYS = {"created", "modified", "unpublished"}
 MONTHS = range(config.FEATURE_MONTHS)
 RELEASE_COLUMNS = [f"package_stable_release_count_M{month}" for month in MONTHS]
 COLUMNS = [
-    "package_name", "prediction_date", "chosen_version", "purl", "package_created_at", "published_at",
+    "package_name", "prediction_date", "chosen_version", "is_security_placeholder", "purl",
+    "package_created_at", "published_at",
     "unpacked_size", "file_count", "dependency_count", "optional_dependency_count",
     "peer_dependency_count", "dev_dependency_count", "bundled_dependency_count", *RELEASE_COLUMNS,
 ]
+
+
+SECURITY_PLACEHOLDER = re.compile(r"0\.0\.\d+-security")
 
 
 class SkipPackage(Exception):
@@ -166,6 +171,8 @@ def build_row(name, packument, t0):
         "package_name": name,
         "prediction_date": config.format_timestamp(t0),
         "chosen_version": version,
+        # 1 means npm replaced the package for security reasons; these rows are kept.
+        "is_security_placeholder": int(SECURITY_PLACEHOLDER.fullmatch(version) is not None),
         "purl": build_purl(name, version),
         "package_created_at": config.format_timestamp(config.parse_timestamp(times["created"])),
         "published_at": config.format_timestamp(config.parse_timestamp(times[version])),
