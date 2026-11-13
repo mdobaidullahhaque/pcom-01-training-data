@@ -369,5 +369,138 @@
     "lightgbm": "4.7.0",
     "numpy": "2.5.4",
     "scikit_learn": "1.9.1"
+  },
+  "counts": {
+    "default_strategy": "S2",
+    "strategies": {
+      "S0": {},
+      "S1": {
+        "edges": [
+          0.0,
+          1.0,
+          3.0
+        ],
+        "rows": [
+          524,
+          1262,
+          126
+        ],
+        "means": [
+          [
+            0.0,
+            0.0,
+            0.0019083969465648854,
+            0.0,
+            0.0
+          ],
+          [
+            0.000792393026941363,
+            0.003961965134706815,
+            0.003961965134706815,
+            0.001584786053882726,
+            0.0
+          ],
+          [
+            0.031746031746031744,
+            0.09523809523809523,
+            0.03968253968253968,
+            0.007936507936507936,
+            0.0
+          ]
+        ],
+        "predictions": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ]
+      },
+      "S2": {
+        "threshold": 6.259067,
+        "severity": "moderate",
+        "positives_above_by_severity": {
+          "low": 2,
+          "moderate": 12,
+          "high": 4,
+          "critical": 1
+        }
+      }
+    },
+    "evaluation_on_oof": {
+      "S0": {
+        "mae_low": 0.002615062761506276,
+        "mae_moderate": 0.00889121338912134,
+        "mae_high": 0.005753138075313808,
+        "mae_critical": 0.0015690376569037657,
+        "mae_unknown": 0.0,
+        "mae_sum": 0.01882845188284519,
+        "rmse_sum": 0.31905091589422035,
+        "exact_match": 0.9864016736401674,
+        "any_precision": 0.0,
+        "any_recall": 0.0,
+        "any_f1": 0.0,
+        "predicted_positive_rows": 0
+      },
+      "S1": {
+        "mae_low": 0.002615062761506276,
+        "mae_moderate": 0.00889121338912134,
+        "mae_high": 0.005753138075313808,
+        "mae_critical": 0.0015690376569037657,
+        "mae_unknown": 0.0,
+        "mae_sum": 0.01882845188284519,
+        "rmse_sum": 0.31905091589422035,
+        "exact_match": 0.9864016736401674,
+        "any_precision": 0.0,
+        "any_recall": 0.0,
+        "any_f1": 0.0,
+        "predicted_positive_rows": 0
+      },
+      "S2": {
+        "mae_low": 0.002615062761506276,
+        "mae_moderate": 0.016736401673640166,
+        "mae_high": 0.005753138075313808,
+        "mae_critical": 0.0015690376569037657,
+        "mae_unknown": 0.0,
+        "mae_sum": 0.026673640167364017,
+        "rmse_sum": 0.33743448208865945,
+        "exact_match": 0.9785564853556485,
+        "any_precision": 0.36363636363636365,
+        "any_recall": 0.46153846153846156,
+        "any_f1": 0.4067796610169492,
+        "predicted_positive_rows": 33
+      }
+    },
+    "s2_cross_validated": {
+      "mae_low": 0.002615062761506276,
+      "mae_moderate": 0.016213389121338913,
+      "mae_high": 0.005753138075313808,
+      "mae_critical": 0.0015690376569037657,
+      "mae_unknown": 0.0,
+      "mae_sum": 0.026150627615062764,
+      "rmse_sum": 0.3355152713999434,
+      "exact_match": 0.9785564853556485,
+      "any_precision": 0.34375,
+      "any_recall": 0.4230769230769231,
+      "any_f1": 0.3793103448275862,
+      "predicted_positive_rows": 32
+    },
+    "note": "S1 and S2 are fitted and evaluated on the same out-of-fold scores, so their table values are optimistic; s2_cross_validated chooses T on 4/5 and tests on 1/5."
   }
 }
