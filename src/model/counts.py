@@ -4,6 +4,8 @@ Strategies:
   S0  all zeros
   S1  score buckets; each bucket predicts the rounded mean of each target column in training
   S2  threshold: score >= T predicts 1 in one severity, else all zeros
+  EV  expected values (floats): score buckets, each predicting the unrounded mean of each target
+      column; the packages at or above the S2 threshold form the top bucket
 
 Fitting reads models/pcom_entry_1/oof_predictions.csv and writes the strategy settings and the
 evaluation table into model_meta.json, so predict.py can switch strategy without retraining.
@@ -22,6 +24,7 @@ SEVERITIES = config.SEVERITIES  # low, moderate, high, critical, unknown
 TARGET_COLUMNS = [f"target_ghsa_{severity}_count_90d" for severity in SEVERITIES]
 STRATEGIES = ("S0", "S1", "S2")
 BUCKET_EDGES = [0.0, 1.0, 3.0, 10.0]  # score lower bounds; score = ghsa_total + 0.5 * probability
+EV_BASE_EDGES = [0.0, 1.0, 3.0]  # the S2 threshold is added as the top edge
 MIN_BUCKET_ROWS = 30
 FALLBACK_SEVERITY = "moderate"
 DEFAULT_STRATEGY = "S2"
@@ -85,6 +88,27 @@ def fit_threshold(scores, counts):
     return {"threshold": best_threshold, "severity": severity, "positives_above_by_severity": known}
 
 
+def fit_expected(scores, counts, threshold):
+    """EV buckets: base edges plus the S2 threshold, merged until each has MIN_BUCKET_ROWS rows."""
+    edges = sorted({*EV_BASE_EDGES, float(threshold)}) if math.isfinite(threshold) else list(EV_BASE_EDGES)
+    edges = merge_small_buckets(scores, edges)
+    index = bucket_index(scores, edges)
+    means = [counts[index == bucket].mean(axis=0).tolist() for bucket in range(len(edges))]
+    for row in means:
+        row[SEVERITIES.index("unknown")] = 0.0
+    sizes = np.bincount(index, minlength=len(edges)).tolist()
+    return {"edges": edges, "rows": sizes, "means": means}
+
+
+def predict_expected(scores, settings):
+    """Return an (n, 5) float array of expected counts (>= 0; unknown 0.0). Never raises on bad scores."""
+    rule = settings["EV"]
+    result = np.asarray(rule["means"], dtype=float)[bucket_index(scores, rule["edges"])]
+    result = np.maximum(result, 0.0)
+    result[:, SEVERITIES.index("unknown")] = 0.0
+    return result
+
+
 def predict_counts(scores, settings, strategy):
     """Return an (n, 5) int array of non-negative counts; unknown is always 0. Never raises on bad scores."""
     scores = clean_scores(scores)
@@ -103,12 +127,13 @@ def predict_counts(scores, settings, strategy):
 def evaluate(predicted, actual):
     errors = predicted - actual
     mae = np.abs(errors).mean(axis=0)
-    rmse = np.sqrt((errors ** 2).mean(axis=0))
+    mse = (errors ** 2).mean(axis=0)
     precision, recall, f1 = any_f1(predicted.sum(axis=1) > 0, actual.sum(axis=1) > 0)
     return {
         **{f"mae_{severity}": float(value) for severity, value in zip(SEVERITIES, mae)},
         "mae_sum": float(mae.sum()),
-        "rmse_sum": float(rmse.sum()),
+        "mse_sum": float(mse.sum()),
+        "rmse_sum": float(np.sqrt(mse).sum()),
         "exact_match": float((predicted == actual).all(axis=1).mean()),
         "any_precision": precision,
         "any_recall": recall,
@@ -117,20 +142,22 @@ def evaluate(predicted, actual):
     }
 
 
-def cross_validated_threshold(scores, counts, seed=config.RANDOM_SEED):
-    """Honest S2 check: choose T on 4 folds of the out-of-fold scores, apply it to the fifth."""
+def cross_validated(scores, counts, seed=config.RANDOM_SEED):
+    """Honest check: fit T and the EV buckets on 4 folds of the out-of-fold scores, test on the fifth."""
     actual_any = counts.sum(axis=1) > 0
     order = np.random.default_rng(seed).permutation(len(scores))
     folds = np.zeros(len(scores), dtype=int)
     for label in (False, True):  # stratify by label so every fold gets positives
         members = order[actual_any[order] == label]
         folds[members] = np.arange(len(members)) % CV_FOLDS
-    predicted = np.zeros_like(counts)
+    predicted = {"S0": np.zeros(counts.shape), "S2": np.zeros(counts.shape), "EV": np.zeros(counts.shape)}
     for fold in range(CV_FOLDS):
         train, test = folds != fold, folds == fold
         settings = {"S2": fit_threshold(scores[train], counts[train])}
-        predicted[test] = predict_counts(scores[test], settings, "S2")
-    return evaluate(predicted, counts)
+        settings["EV"] = fit_expected(scores[train], counts[train], settings["S2"]["threshold"])
+        predicted["S2"][test] = predict_counts(scores[test], settings, "S2")
+        predicted["EV"][test] = predict_expected(scores[test], settings)
+    return {name: evaluate(values, counts) for name, values in predicted.items()}
 
 
 def load_oof(path=config.MODEL_DIR / "oof_predictions.csv"):
@@ -143,35 +170,41 @@ def load_oof(path=config.MODEL_DIR / "oof_predictions.csv"):
 
 def fit_all(scores, counts):
     settings = {"S0": {}, "S1": fit_buckets(scores, counts), "S2": fit_threshold(scores, counts)}
+    settings["EV"] = fit_expected(scores, counts, settings["S2"]["threshold"])
     table = {strategy: evaluate(predict_counts(scores, settings, strategy), counts) for strategy in STRATEGIES}
+    table["EV"] = evaluate(predict_expected(scores, settings), counts)
     return settings, table
 
 
 def main():
     scores, counts = load_oof()
     settings, table = fit_all(scores, counts)
-    honest = cross_validated_threshold(scores, counts)
+    honest = cross_validated(scores, counts)
     meta_path = config.MODEL_DIR / "model_meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     meta["counts"] = {
         "default_strategy": DEFAULT_STRATEGY,
         "strategies": settings,
         "evaluation_on_oof": table,
-        "s2_cross_validated": honest,
-        "note": "S1 and S2 are fitted and evaluated on the same out-of-fold scores, so their table "
-                "values are optimistic; s2_cross_validated chooses T on 4/5 and tests on 1/5.",
+        "cross_validated": honest,
+        "note": "S1, S2 and EV are fitted and evaluated on the same out-of-fold scores, so those values "
+                "are optimistic; cross_validated fits T and the EV buckets on 4/5 and tests on 1/5.",
     }
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     print(f"{len(scores)} rows, {int((counts.sum(axis=1) > 0).sum())} positive")
     print("S1 buckets:", list(zip(settings["S1"]["edges"], settings["S1"]["rows"], settings["S1"]["predictions"])))
-    print("S1 means:", [[round(v, 3) for v in row] for row in settings["S1"]["means"]])
     print("S2:", settings["S2"])
-    metrics = ["mae_low", "mae_moderate", "mae_high", "mae_critical", "mae_unknown", "mae_sum", "rmse_sum",
-               "exact_match", "any_precision", "any_recall", "any_f1", "predicted_positive_rows"]
-    print(f"{'metric':24}" + "".join(f"{s:>10}" for s in STRATEGIES) + f"{'S2 (CV)':>10}")
+    print("EV buckets (edge, rows, means low/moderate/high/critical/unknown):")
+    for edge, rows, means in zip(settings["EV"]["edges"], settings["EV"]["rows"], settings["EV"]["means"]):
+        print(f"  score >= {edge:7.3f}: {rows:5} rows, {[round(value, 4) for value in means]}")
+    names = [*STRATEGIES, "EV"]
+    metrics = ["mae_low", "mae_moderate", "mae_high", "mae_critical", "mae_unknown", "mae_sum", "mse_sum",
+               "rmse_sum", "exact_match", "any_precision", "any_recall", "any_f1", "predicted_positive_rows"]
+    print(f"{'metric':24}" + "".join(f"{s:>10}" for s in names) + "".join(f"{s + ' CV':>10}" for s in honest))
     for metric in metrics:
-        print(f"{metric:24}" + "".join(f"{table[s][metric]:10.4f}" for s in STRATEGIES) + f"{honest[metric]:10.4f}")
+        print(f"{metric:24}" + "".join(f"{table[s][metric]:10.4f}" for s in names)
+              + "".join(f"{honest[s][metric]:10.4f}" for s in honest))
     print(f"Saved to {meta_path} (default {DEFAULT_STRATEGY})")
 
 

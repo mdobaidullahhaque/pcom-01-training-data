@@ -64,6 +64,39 @@ def test_evaluate_on_a_small_case():
     assert (result["any_precision"], result["any_recall"]) == (1.0, 0.5)
 
 
+EV_SETTINGS = {"EV": {"edges": [0.0, 1.0, 6.0], "means": [[0.0, 0.0, 0.002, 0.0, 0.5], [0.001, 0.004, 0.0, 0.0, 0.0], [0.06, 0.36, 0.12, 0.03, 0.0]]}}
+
+
+def test_expected_values_are_non_negative_floats_with_unknown_zero():
+    result = ct.predict_expected(ODD_SCORES, EV_SETTINGS)
+    assert result.shape == (len(ODD_SCORES), 5) and result.dtype.kind == "f"
+    assert (result >= 0).all()
+    assert (result[:, ct.SEVERITIES.index("unknown")] == 0.0).all()
+    assert result[ODD_SCORES.index(1e12)].tolist() == [0.06, 0.36, 0.12, 0.03, 0.0]
+    assert result[0].tolist() == [0.0, 0.0, 0.002, 0.0, 0.0]  # NaN score: lowest bucket
+
+
+def test_expected_buckets_keep_the_threshold_as_top_edge_when_large_enough():
+    scores = np.array([0.1] * 50 + [1.5] * 50 + [4.0] * 40 + [8.0] * 35)
+    counts = np.zeros((len(scores), 5), dtype=int)
+    counts[-5:, 1] = 1
+    rule = ct.fit_expected(scores, counts, threshold=6.26)
+    assert rule["edges"] == [0.0, 1.0, 3.0, 6.26] and rule["rows"] == [50, 50, 40, 35]
+    assert rule["means"][-1][1] == pytest.approx(5 / 35)
+    small = ct.fit_expected(np.array([0.1] * 50 + [1.5] * 50 + [4.0] * 40 + [8.0] * 10), counts[:150], threshold=6.26)
+    assert small["edges"] == [0.0, 1.0, 3.0] and small["rows"][-1] == 50
+
+
+@pytest.mark.skipif(not META_PATH.exists(), reason="model not trained yet")
+def test_saved_ev_settings_reproduce_the_table():
+    meta = json.loads(META_PATH.read_text(encoding="utf-8"))["counts"]
+    scores, counts = ct.load_oof()
+    result = ct.evaluate(ct.predict_expected(scores, meta["strategies"]), counts)
+    assert result == pytest.approx(meta["evaluation_on_oof"]["EV"])
+    assert meta["strategies"]["EV"]["edges"][-1] == pytest.approx(meta["strategies"]["S2"]["threshold"])
+    assert all(rows >= ct.MIN_BUCKET_ROWS for rows in meta["strategies"]["EV"]["rows"])
+
+
 @pytest.mark.skipif(not META_PATH.exists(), reason="model not trained yet")
 def test_saved_settings_reproduce_the_table():
     meta = json.loads(META_PATH.read_text(encoding="utf-8"))["counts"]

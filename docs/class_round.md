@@ -16,7 +16,7 @@
    ```powershell
    .venv\Scripts\python.exe predict.py docs\sample_input.csv -o $env:TEMP\practice.csv
    ```
-   You should see `All 85 expected input columns found`, a 5-row table, an `Output:` line and a `Time:` line. `electron`, `next` and `sequelize` show 0 1 0 0 0, and `snazzy` and `zpartlist` show all zeros.
+   You should see `All 85 expected input columns found`, two 5-row tables, an `Output:` line and a `Time:` line. In the second table, **Values for the form (float)**, `electron`, `next` and `sequelize` show `0.061 0.364 0.121 0.030 0.000`, and `snazzy` and `zpartlist` show `0.000 0.000 0.002 0.000 0.000`.
 
 ## During the round
 
@@ -25,14 +25,18 @@
    ```powershell
    .venv\Scripts\python.exe predict.py "$HOME\Downloads\round1.csv"
    ```
-3. **Read the 5 numbers per package** from the table on screen:
+3. **Find the package** in the second table, **Values for the form (float)**. Use the `purl`, or `row` (the row number in the input file, not counting the header):
    ```text
-    row  purl                       low  mod high crit unkn    score
-      1  pkg:npm/electron@37.2.5      0    1    0    0    0   29.483
+   Values for the form (float):
+    row  purl                          low     mod    high    crit    unkn
+      1  pkg:npm/electron@37.2.5     0.061   0.364   0.121   0.030   0.000
    ```
-   The columns are, in order: low, moderate, high, critical and unknown. `row` is the row number in the input file, not counting the header.
-4. **Type them into the form** in the same order. The same numbers are in `round1_predictions.csv`, next to the input file. To see that file:
+   Ignore the first table (whole numbers); it is the schema output, not the form values.
+4. **Type the 5 values into the form's 5 fields, in this order:** low, moderate, high, critical, unknown. Unknown is always `0`. For the example above, that is `0.061`, `0.364`, `0.121`, `0.030` and `0`.
+5. **Only if the round is announced to be scored by absolute error** (mean absolute error, MAE): type `0` in all 5 fields instead. All zeros has the lowest absolute error, while the float values have the lowest squared error.
+6. To have the float values in a file as well, add `--float`. The file `round1_predictions.csv` then holds them, next to the input file:
    ```powershell
+   .venv\Scripts\python.exe predict.py "$HOME\Downloads\round1.csv" --float
    Get-Content "$HOME\Downloads\round1_predictions.csv"
    ```
 
@@ -50,12 +54,11 @@
 | `python` or `.venv` not found | You are not in `E:\pcom`. Run `cd E:\pcom` first. |
 | Very slow (over 10 s) | Run it again; the first run after a restart is the slowest. |
 
-## Switching to all zeros
+## Which values to type
 
-If the round is scored only by error per number or exact match, all zeros may score better than the default:
+| Round scored by | Type into the 5 fields |
+|---|---|
+| Not announced, or squared error (MSE, RMSE) | The **Values for the form (float)** row |
+| Absolute error (MAE) | `0` in every field |
 
-```powershell
-.venv\Scripts\python.exe predict.py "$HOME\Downloads\round1.csv" --strategy S0
-```
-
-The default, `S2`, predicts 1 moderate advisory for packages with many past advisories, and 0 for all others.
+The whole numbers in the first table (strategy `S2`, or all zeros with `--strategy S0`) are only for the output CSV. They are not meant for the form.

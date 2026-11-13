@@ -72,11 +72,15 @@ def read_rows(path, known_names=()):
     return rows, columns
 
 
-def write_output(path, counts):
+def write_output(path, values, as_float=False):
+    """Integers by default (the schema); with as_float, expected values with up to 6 decimals."""
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(TARGET_COLUMNS)
-        writer.writerows([[int(value) for value in row] for row in counts])
+        if as_float:
+            writer.writerows([[f"{float(value):.6f}" for value in row] for row in values])
+        else:
+            writer.writerows([[int(value) for value in row] for row in values])
 
 
 def load_lightgbm():
@@ -93,7 +97,10 @@ def load_lightgbm():
 
 
 def score_rows(rows, strategy):
-    """Return (counts per row, scores per row, number of rows that fell back to zeros)."""
+    """Return (counts, scores, rows that fell back to zeros, expected values or None) per row.
+
+    The expected values (strategy EV, floats) are None when model_meta.json has no EV settings.
+    """
     import numpy as np
 
     lgb = load_lightgbm()
@@ -132,6 +139,11 @@ def score_rows(rows, strategy):
     scores[failed] = np.nan
     counts = ct.predict_counts(scores, settings, strategy)
     counts[failed] = 0
+    expected = None
+    if "EV" in settings:
+        expected = ct.predict_expected(scores, settings)
+        expected[failed] = 0.0
+        expected = expected.tolist()
     empty = np.isnan(X).all(axis=1) & ~failed
     if empty.any():
         warn(f"{int(empty.sum())} row(s) had no usable feature values: {[int(i) + 1 for i in np.flatnonzero(empty)][:10]}")
@@ -142,7 +154,7 @@ def score_rows(rows, strategy):
     else:
         print(f"All {len(ft.INPUT_COLUMNS)} expected input columns found")
     print(f"Strategy {strategy}: {meta['counts']['strategies'].get(strategy, {}) and strategy_note(strategy, settings)}")
-    return counts.tolist(), scores.tolist(), int(failed.sum())
+    return counts.tolist(), scores.tolist(), int(failed.sum()), expected
 
 
 def strategy_note(strategy, settings):
@@ -163,6 +175,16 @@ def print_table(rows, counts, scores):
         print(f"{index:>4}  {purl:<{width}}  " + " ".join(f"{value:>4}" for value in count) + f"  {shown:>7}")
 
 
+def print_float_table(rows, expected):
+    """Expected counts (strategy EV), rounded to 3 decimals, for a form that asks for floats."""
+    width = min(60, max([len(row.get("purl") or "") for row in rows] + [4]))
+    print("\nValues for the form (float):")
+    print(f"{'row':>4}  {'purl':<{width}}  {'low':>7} {'mod':>7} {'high':>7} {'crit':>7} {'unkn':>7}")
+    for index, (row, values) in enumerate(zip(rows, expected), 1):
+        purl = (row.get("purl") or "-")[:width]
+        print(f"{index:>4}  {purl:<{width}}  " + " ".join(f"{value:7.3f}" for value in values))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Predict the 5 target_ghsa_*_count_90d values for each package in a PCOM-01 CSV.",
@@ -171,6 +193,8 @@ def main(argv=None):
     parser.add_argument("input", help="input CSV in the PCOM-01 record schema")
     parser.add_argument("-o", "--output", help="output CSV (default: <input name>_predictions.csv next to the input)")
     parser.add_argument("--strategy", choices=STRATEGIES, help="score-to-counts rule (default: from model_meta.json, S2)")
+    parser.add_argument("--float", dest="as_float", action="store_true",
+                        help="write the expected values (floats, strategy EV) to the output CSV instead of integers")
     args = parser.parse_args(argv)
 
     input_path = Path(args.input)
@@ -192,23 +216,30 @@ def main(argv=None):
     print(f"Read {len(rows)} row(s) from {input_path}")
 
     exit_code = 0
+    expected = None
     if rows:
         try:
-            counts, scores, failed = score_rows(rows, args.strategy)
+            counts, scores, failed, expected = score_rows(rows, args.strategy)
             if failed:
                 exit_code = 1
         except Exception as error:
             warn(f"the model could not be used ({type(error).__name__}: {error})")
             warn("ALL predictions below are zeros")
             counts, scores, exit_code = [[0] * 5 for _ in rows], [float("nan")] * len(rows), 1
+            expected = [[0.0] * 5 for _ in rows]
         print()
         print_table(rows, counts, scores)
+        if expected is None:
+            warn("model_meta.json has no EV settings; float values are zeros (rebuild: python -m src.model.build)")
+            expected = [[0.0] * 5 for _ in rows]
+            exit_code = max(exit_code, 1) if args.as_float else exit_code
+        print_float_table(rows, expected)
     else:
         counts = []
         warn("the input has no data rows; writing a header-only file")
 
     try:
-        write_output(output_path, counts)
+        write_output(output_path, expected if args.as_float and rows else counts, args.as_float)
         print(f"\nOutput: {output_path.resolve()}")
     except Exception as error:
         print(f"ERROR: cannot write {output_path}: {error}")

@@ -95,11 +95,14 @@ Everything `predict.py` needs is in git: `predict.py`, `config.py`, `src/model/f
 ```powershell
 .venv\Scripts\python.exe predict.py input.csv
 .venv\Scripts\python.exe predict.py input.csv -o output.csv --strategy S0
+.venv\Scripts\python.exe predict.py input.csv --float
 ```
 
 - **Input:** a CSV in the PCOM-01 record schema. Comma or semicolon, UTF-8 with or without BOM (Windows-1252 as a fallback), column names in any order or case. Extra columns are ignored, and missing columns or values are treated as unknown. Rows where every cell is empty are skipped, with a notice.
 - **Output:** `<input name>_predictions.csv` next to the input, unless `-o` is given. It holds exactly `target_ghsa_low_count_90d`, `target_ghsa_moderate_count_90d`, `target_ghsa_high_count_90d`, `target_ghsa_critical_count_90d` and `target_ghsa_unknown_count_90d`, as non-negative integers, one row per input row, in the same order. The screen shows the same numbers with each row's `purl` and score.
-- **`--strategy`:** `S2` (default) or `S0` (all zeros). `S1` is also accepted, but it predicts all zeros on this data too.
+- **Values for the form (float):** a second table on screen shows the expected counts (strategy EV, 3 decimals) for each package. These are the numbers to type into the class form, which asks for floats.
+- **`--float`:** writes the EV values (6 decimals) to the output CSV instead of the integers.
+- **`--strategy`:** chooses the integer counts: `S2` (default) or `S0` (all zeros). `S1` is also accepted, but it predicts all zeros on this data too. The float table always shows EV.
 - **Exit codes:** 0 = done; 1 = output written, but some or all rows fell back to zeros (for example, the model files are missing or do not match their hash); 2 = the input could not be read or the output could not be written.
 
 ### How it works
@@ -108,7 +111,8 @@ Everything `predict.py` needs is in git: `predict.py`, `config.py`, `src/model/f
 2. A small class-weighted LightGBM model (4 leaves, 100 trees) gives a probability of any new GHSA in the next 90 days.
 3. Scorer D: `score = ghsa_total + 0.5 × probability`. The past GHSA count comes first, and the probability only breaks ties.
 4. Rule S2: `score >= 6.26` predicts 1 moderate advisory, otherwise all zeros. Unknown is always 0.
-5. The counts are written in schema order.
+5. EV: the score falls into one of 4 buckets (0-1, 1-3, 3-6.26, 6.26 and above), and each bucket predicts the average count per severity among training packages in that bucket. For the top bucket that is low 0.061, moderate 0.364, high 0.121, critical 0.030 and unknown 0.
+6. The counts are written in schema order.
 
 ### Results
 
@@ -132,6 +136,16 @@ The simple rule beat LightGBM alone on the main metric. With only 26 positives, 
 
 S2's threshold was chosen on the same scores it is evaluated on. Choosing it on 4/5 of the rows and testing on the rest gives F1 0.38.
 
+**Error of the values typed into the form**, on the out-of-fold scores (cross-validated in brackets, fitted on 4/5 and tested on 1/5):
+
+| Strategy | MAE, summed over 5 columns | MSE, summed over 5 columns |
+|---|---|---|
+| S0: all zeros | **0.0188** (0.0188) | 0.0282 (0.0282) |
+| S2: threshold, integers | 0.0267 (0.0262) | 0.0329 (0.0324) |
+| **EV: expected values (form default)** | 0.0337 (0.0352) | **0.0256** (0.0278) |
+
+All zeros has the lowest absolute error and EV the lowest squared error, so type EV values unless the round is announced to be scored by absolute error.
+
 ### Rebuild the model
 
 ```powershell
@@ -145,6 +159,7 @@ This runs cross-validation, trains the final model, fits the counts rule, and wr
 - **Very few positives:** 26 positive rows, so every metric is uncertain.
 - **Sampling:** stratum A (packages with an earlier GHSA) dominates the data and holds 25 of the 26 positives. The model has learned little about packages without a GHSA history.
 - **Unknown severity:** always predicted as 0, because it never occurs in the training data.
-- **S2 is tuned for detection:** the round's scoring method was not known. If it is scored only by error per number or exact match, `--strategy S0` would score better.
+- **Unknown scoring method:** the values were chosen without knowing how the round is scored. EV fits squared error, all zeros fits absolute error, and S2's integers fit detection, so none is best for every scoring method. EV's advantage over all zeros on squared error is small once cross-validated (0.0278 vs 0.0282).
+- **EV is coarse:** it has only 4 buckets, so every package in a bucket gets the same 5 values.
 - **M0 assumption:** M0 is assumed to be the most recent month before the prediction date. If the round's data uses the opposite order, the "last 3 months" and "months since" features are read in reverse.
 - **One prediction date:** the model is trained on a single t0 (2025-08-01) and assumes the round's data follows the same definitions.

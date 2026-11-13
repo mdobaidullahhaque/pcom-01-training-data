@@ -258,6 +258,51 @@ def test_gitattributes_keeps_the_model_unconverted():
     assert result.stdout.strip().endswith("text: unset")
 
 
+def expected_values(rows):
+    meta = json.loads((config.MODEL_DIR / "model_meta.json").read_text(encoding="utf-8"))
+    X, names = ft.build_features(rows, None, use_reference_features=False)
+    booster = lgb.Booster(model_file=str(config.MODEL_DIR / "model.txt"))
+    scores = np.nan_to_num(X[:, names.index("ghsa_total")]) + 0.5 * booster.predict(X)
+    return ct.predict_expected(scores, meta["counts"]["strategies"])
+
+
+def test_float_table_is_printed_and_integers_stay_the_default(clone, tmp_path, training_rows, core_columns):
+    rows = sample(training_rows, 8)
+    code, output, screen = run(clone, write_csv(tmp_path / "in.csv", core_columns, [[row[c] for c in core_columns] for row in rows]))
+    assert code == 0 and output == expected_counts(rows)
+    assert "Values for the form (float):" in screen
+    table = screen.split("Values for the form (float):", 1)[1].splitlines()
+    values = [[float(v) for v in line.split()[-5:]] for line in table if line.strip()[:1].isdigit()]
+    assert np.allclose(values, expected_values(rows).round(3), atol=1e-9)
+    assert all(row[4] == 0.0 for row in values)
+
+
+def test_float_option_writes_decimals(clone, tmp_path, training_rows, core_columns):
+    rows = sample(training_rows, 8)
+    path = write_csv(tmp_path / "in.csv", core_columns, [[row[c] for c in core_columns] for row in rows])
+    output = tmp_path / "float.csv"
+    result = subprocess.run([sys.executable, str(clone / "predict.py"), str(path), "-o", str(output), "--float"],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0
+    table = list(csv.reader(open(output, newline="", encoding="utf-8")))
+    assert table[0] == TARGETS and len(table) == 9
+    assert all("." in value for row in table[1:] for value in row)
+    written = np.array([[float(value) for value in row] for row in table[1:]])
+    assert (written >= 0).all() and (written[:, 4] == 0).all()
+    assert np.allclose(written, expected_values(rows), atol=1e-6)
+
+
+def test_float_values_are_zero_when_the_model_is_missing(clone, tmp_path, training_rows, core_columns):
+    (clone / "models/pcom_entry_1/model.txt").unlink()
+    rows = sample(training_rows, 3)
+    path = write_csv(tmp_path / "in.csv", core_columns, [[row[c] for c in core_columns] for row in rows])
+    output = tmp_path / "float.csv"
+    result = subprocess.run([sys.executable, str(clone / "predict.py"), str(path), "-o", str(output), "--float"],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 1
+    assert [row for row in csv.reader(open(output, newline="", encoding="utf-8"))][1:] == [["0.000000"] * 5] * 3
+
+
 # 6. Working directory -----------------------------------------------------------------------
 def test_runs_from_another_folder(clone, tmp_path, training_rows, core_columns):
     elsewhere = tmp_path / "somewhere" / "else"
