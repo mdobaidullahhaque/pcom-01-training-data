@@ -7,6 +7,7 @@ deviation over the repeats.
 Usage: python -u -m src.model.train
 """
 import csv
+import hashlib
 import json
 import platform
 import time
@@ -209,9 +210,16 @@ def explain(booster, X, names, top=10):
     ]
 
 
+def model_text_sha256(path):
+    """Hash of the model text with line endings normalised, as predict.py checks it."""
+    text = Path(path).read_bytes().decode("utf-8").replace("\r\n", "\n")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def save(model_dir, booster, meta, oof_rows):
     model_dir.mkdir(parents=True, exist_ok=True)
     booster.save_model(str(model_dir / "model.txt"))
+    meta = {**meta, "model_sha256": model_text_sha256(model_dir / "model.txt")}
     (model_dir / "model_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     with open(model_dir / "oof_predictions.csv", "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, list(oof_rows[0]), lineterminator="\n")

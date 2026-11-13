@@ -24,7 +24,7 @@ Training dataset following the PCOM-01 record schema. Each row is one npm packag
 
 ## How to reproduce
 
-Needs Python 3.10+. `GITHUB_TOKEN` must be set to a read-only token for the GitHub step; it is read only from the environment. Raw responses are cached in `data/cache/` (gitignored).
+Needs Python 3.12 or newer (tested with 3.15.2 on Windows); the pinned numpy needs at least 3.12. `GITHUB_TOKEN` must be set to a read-only token for the GitHub step; it is read only from the environment. Raw responses are cached in `data/cache/` (gitignored).
 
 ```powershell
 python -m venv .venv
@@ -78,11 +78,17 @@ Predicts the 5 `target_ghsa_*_count_90d` values for each package in a PCOM-01 CS
 ### Setup on a fresh clone
 
 ```powershell
+git clone https://github.com/mdobaidullahhaque/pcom-01-training-data
+cd pcom-01-training-data
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Everything `predict.py` needs is in git: `predict.py`, `config.py`, `src/model/features.py`, `src/model/counts.py` and `models/pcom_entry_1/` (`model.txt`, `model_meta.json`). No network access and no `GITHUB_TOKEN` are needed.
+The install downloads about 80 MB and took about 2 minutes in a test with a warm pip cache; allow longer on a new machine. Python 3.12 or newer is needed.
+
+Everything `predict.py` needs is in git: `predict.py`, `config.py`, `src/model/features.py`, `src/model/counts.py` and `models/pcom_entry_1/` (`model.txt`, `model_meta.json`). No network access and no `GITHUB_TOKEN` are needed. `.gitattributes` stops git from converting the model's line endings. `predict.py` also normalises them, and checks the model against the SHA-256 hash in `model_meta.json` before loading it.
+
+**Known issue in the tag `pcom-entry-1`:** that version has no `.gitattributes`, the hash check or the line-ending fix. On a Windows clone with `core.autocrlf=true`, git converts `model.txt` to CRLF, and LightGBM then crashes while loading it, with no output file. Later commits fix this. A working copy whose `model.txt` has LF line endings is not affected.
 
 ### Usage
 
@@ -94,7 +100,7 @@ Everything `predict.py` needs is in git: `predict.py`, `config.py`, `src/model/f
 - **Input:** a CSV in the PCOM-01 record schema. Comma or semicolon, UTF-8 with or without BOM (Windows-1252 as a fallback), column names in any order or case. Extra columns are ignored, and missing columns or values are treated as unknown. Rows where every cell is empty are skipped, with a notice.
 - **Output:** `<input name>_predictions.csv` next to the input, unless `-o` is given. It holds exactly `target_ghsa_low_count_90d`, `target_ghsa_moderate_count_90d`, `target_ghsa_high_count_90d`, `target_ghsa_critical_count_90d` and `target_ghsa_unknown_count_90d`, as non-negative integers, one row per input row, in the same order. The screen shows the same numbers with each row's `purl` and score.
 - **`--strategy`:** `S2` (default) or `S0` (all zeros). `S1` is also accepted, but it predicts all zeros on this data too.
-- **Exit codes:** 0 = done; 1 = output written, but some or all rows fell back to zeros (for example, the model files are missing); 2 = the input could not be read or the output could not be written.
+- **Exit codes:** 0 = done; 1 = output written, but some or all rows fell back to zeros (for example, the model files are missing or do not match their hash); 2 = the input could not be read or the output could not be written.
 
 ### How it works
 

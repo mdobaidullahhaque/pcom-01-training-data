@@ -42,7 +42,8 @@
 |---|---|
 | `ERROR: cannot read ...` (exit code 2) | Check the path and file name. Use quotes, or drag the file into the PowerShell window to paste its path. |
 | `ERROR: cannot write ...` | The output file is open in Excel. Close it, or add `-o $env:TEMP\out.csv`. |
-| `WARNING: the model could not be used` and all zeros | Model files are missing or changed. In `E:\pcom`, run `git status` and `git checkout pcom-entry-1 -- models` (or re-clone), then run again. If there is no time, submit the zeros. |
+| `WARNING: the model could not be used` and all zeros | Model files are missing or changed. In `E:\pcom`, run `git status` and then `git checkout HEAD -- models` to restore them, and run again. If there is no time, submit the zeros. |
+| No table and no `Output:` line; the program just stops | The model failed to load inside LightGBM. Restore it with `git checkout HEAD -- models` and run again. Versions after the tag `pcom-entry-1` prevent this. |
 | `WARNING: ... expected input columns are missing` | The CSV lacks some feature columns. Predictions still work, using what is there. |
 | `WARNING: skipped N empty row(s)` | Fully empty lines are not packages. Match the table's `purl` values to the form. |
 | `WARNING: ... not valid UTF-8` | Only a notice; the file was read as Windows-1252. |

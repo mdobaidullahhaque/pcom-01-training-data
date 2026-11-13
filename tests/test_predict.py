@@ -224,6 +224,40 @@ def test_mismatched_feature_list_gives_zeros_and_exit_1(clone, tmp_path, trainin
     assert code == 1 and output == [ZERO] * 5 and "disagree on the feature list" in screen
 
 
+def test_model_with_crlf_line_endings_still_works(clone, tmp_path, training_rows, core_columns):
+    """What git did on a Windows checkout with core.autocrlf: LightGBM crashed before the fix."""
+    model = clone / "models/pcom_entry_1/model.txt"
+    model.write_bytes(model.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    assert model.read_bytes().count(b"\r\n") > 1000
+    rows = sample(training_rows, 10)
+    code, output, screen = run(clone, write_csv(tmp_path / "in.csv", core_columns, [[row[c] for c in core_columns] for row in rows]))
+    assert code == 0, screen
+    assert output == expected_counts(rows)
+
+
+def test_damaged_model_file_gives_zeros_not_a_crash(clone, tmp_path, training_rows, core_columns):
+    model = clone / "models/pcom_entry_1/model.txt"
+    text = model.read_bytes()
+    model.write_bytes(text[: len(text) // 2])  # a truncated file, as from an interrupted copy
+    rows = sample(training_rows, 5)
+    code, output, screen = run(clone, write_csv(tmp_path / "in.csv", core_columns, [[row[c] for c in core_columns] for row in rows]))
+    assert code == 1 and output == [ZERO] * 5 and "does not match model_meta.json" in screen
+
+
+def inside_git_repo():
+    if shutil.which("git") is None:
+        return False
+    return subprocess.run(["git", "rev-parse", "--git-dir"], cwd=ROOT, capture_output=True).returncode == 0
+
+
+def test_gitattributes_keeps_the_model_unconverted():
+    if not inside_git_repo():
+        pytest.skip("not a git checkout")
+    result = subprocess.run(["git", "check-attr", "text", "--", "models/pcom_entry_1/model.txt"],
+                            cwd=ROOT, capture_output=True, text=True)
+    assert result.stdout.strip().endswith("text: unset")
+
+
 # 6. Working directory -----------------------------------------------------------------------
 def test_runs_from_another_folder(clone, tmp_path, training_rows, core_columns):
     elsewhere = tmp_path / "somewhere" / "else"
@@ -250,8 +284,8 @@ def test_default_output_name(clone, tmp_path, training_rows, core_columns):
 
 # 7. Fresh clone -----------------------------------------------------------------------------
 def test_runtime_files_are_not_gitignored():
-    if shutil.which("git") is None:
-        pytest.skip("git not available")
+    if not inside_git_repo():
+        pytest.skip("not a git checkout")
     for name in [*RUNTIME_FILES, "requirements.txt"]:
         assert (ROOT / name).exists(), name
         ignored = subprocess.run(["git", "check-ignore", "-q", name], cwd=ROOT).returncode == 0

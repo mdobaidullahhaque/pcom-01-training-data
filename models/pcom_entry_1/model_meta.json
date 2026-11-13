@@ -370,6 +370,7 @@
     "numpy": "2.5.4",
     "scikit_learn": "1.9.1"
   },
+  "model_sha256": "cb0a735a1049be690fd01bf9d26ca03da9f77677d85a9d255de61fa2ac4802af",
   "counts": {
     "default_strategy": "S2",
     "strategies": {

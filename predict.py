@@ -13,6 +13,7 @@ STARTED = time.perf_counter()
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import sys
@@ -100,7 +101,14 @@ def score_rows(rows, strategy):
     from src.model import features as ft
 
     meta = json.loads((MODEL_DIR / "model_meta.json").read_text(encoding="utf-8"))
-    booster = lgb.Booster(model_file=str(MODEL_DIR / "model.txt"))
+    # A damaged model file can crash LightGBM's C++ code outright, which no Python error handling
+    # can catch. So normalise line endings (git may have converted them) and check the hash first.
+    model_text = (MODEL_DIR / "model.txt").read_bytes().decode("utf-8").replace("\r\n", "\n")
+    expected_hash = meta.get("model_sha256")
+    if expected_hash and hashlib.sha256(model_text.encode("utf-8")).hexdigest() != expected_hash:
+        raise RuntimeError("model.txt does not match model_meta.json (changed or damaged); "
+                           "restore models/pcom_entry_1 from git")
+    booster = lgb.Booster(model_str=model_text)
     X, names = ft.build_features(rows, None, use_reference_features=meta["use_reference_features"])
     if not (booster.feature_name() == meta["feature_names"] == names):
         raise RuntimeError("model.txt, model_meta.json and features.py disagree on the feature list; "

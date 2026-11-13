@@ -1,0 +1,3 @@
+# Keep the trained model byte-for-byte. With core.autocrlf, a Windows checkout turned the
+# model's LF line endings into CRLF, and LightGBM then crashed while loading it.
+models/** -text
