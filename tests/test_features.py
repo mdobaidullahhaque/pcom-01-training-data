@@ -114,7 +114,7 @@ def test_aggregates_on_a_known_row():
     assert values["log_downloads_3m"] == pytest.approx(math.log1p(180))
     assert values["downloads_trend"] == pytest.approx((180 / 3 + 1) / (270 / 9 + 1))
     assert values["log_downloads_max_month"] == pytest.approx(math.log1p(120))
-    assert values["download_days_observed"] == 360
+    assert "download_days_observed" not in values
     assert (values["releases_12m"], values["releases_3m"], values["release_months_active"]) == (3, 2, 2)
     assert (values["ghsa_total"], values["ghsa_high_critical"], values["has_any_ghsa"]) == (4, 1, 1)
     assert (values["ghsa_12m"], values["ghsa_3m"], values["months_since_last_ghsa"]) == (1, 0, 4)

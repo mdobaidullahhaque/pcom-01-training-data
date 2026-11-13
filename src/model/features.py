@@ -26,7 +26,7 @@ REFERENCE_FEATURES = ["package_age_days", "days_since_version_published"]
 FEATURE_NAMES = [
     "log_unpacked_size", "log_file_count", *DEPENDENCY_COLUMNS,
     "days_created_to_published", *REFERENCE_FEATURES,
-    "log_downloads_12m", "log_downloads_3m", "downloads_trend", "log_downloads_max_month", "download_days_observed",
+    "log_downloads_12m", "log_downloads_3m", "downloads_trend", "log_downloads_max_month",
     "releases_12m", "releases_3m", "release_months_active",
     *[f"ghsa_{severity}_total" for severity in SEVERITIES],
     "ghsa_total", "ghsa_high_critical", "has_any_ghsa", "ghsa_12m", "ghsa_3m", "months_since_last_ghsa",
@@ -34,7 +34,6 @@ FEATURE_NAMES = [
 INPUT_COLUMNS = frozenset(
     ["unpacked_size", "file_count", *DEPENDENCY_COLUMNS, "package_created_at", "published_at"]
     + [f"package_downloads_M{m}" for m in MONTHS]
-    + [f"package_download_days_observed_M{m}" for m in MONTHS]
     + [f"package_stable_release_count_M{m}" for m in MONTHS]
     + [f"ghsa_{severity}_count" for severity in SEVERITIES]
     + [f"ghsa_{severity}_count_M{m}" for severity in SEVERITIES for m in MONTHS]
@@ -157,7 +156,6 @@ def row_features(row, reference):
         "log_downloads_3m": log1p(known_last3),
         "downloads_trend": trend,
         "log_downloads_max_month": log1p(max(known_downloads)) if known_downloads else NAN,
-        "download_days_observed": total([get(column) for column in recent_first("package_download_days_observed")]),
         "releases_12m": total(releases),
         "releases_3m": total(releases[:3]),
         "release_months_active": float(sum(value > 0 for value in known_releases)) if known_releases else NAN,

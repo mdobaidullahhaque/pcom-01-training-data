@@ -92,6 +92,7 @@ GITHUB_CACHE_DIR = CACHE_DIR / "github"
 PACKAGES_INCLUDED_CSV = DATA_DIR / "packages_included.csv"
 INITIAL_RUN_STATS_JSON = DATA_DIR / "initial_run_stats.json"
 INITIAL_BUDGET_MINUTES = 40
+MODEL_DIR = ROOT / "models" / "pcom_entry_1"
 PACKAGES_CSV = DATA_DIR / "packages.csv"
 PACKAGES_TEST_CSV = DATA_DIR / "packages_test.csv"
 SELECTION_STATS_JSON = DATA_DIR / "packages_selection_stats.json"
