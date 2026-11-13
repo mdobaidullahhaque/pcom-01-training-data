@@ -42,7 +42,12 @@ def read_rows(path, known_names=()):
     schema spelling (the monthly columns end in a capital M, as in ghsa_low_count_M0).
     """
     canonical = {name.lower(): name for name in known_names}
-    text = Path(path).read_bytes().decode("utf-8-sig", errors="replace")
+    data = Path(path).read_bytes()
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        warn("the file is not valid UTF-8; reading it as Windows-1252 (Latin-1)")
+        text = data.decode("cp1252", errors="replace")
     first_line = text.split("\n", 1)[0]
     delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
@@ -50,16 +55,19 @@ def read_rows(path, known_names=()):
     if header is None:
         return [], []
     columns = [canonical.get(name.strip().lower(), name.strip().lower()) for name in header]
-    rows = []
+    rows, skipped = [], 0
     for values in reader:
         if not any(value.strip() for value in values):
-            continue  # skip blank lines
+            skipped += 1  # a blank line or a row of empty cells is not a package
+            continue
         row = {}
         for name, value in zip(columns, values):
             value = value.strip()
             if name and name not in row:
                 row[name] = None if value.lower() in MISSING_TOKENS else value
         rows.append(row)
+    if skipped:
+        warn(f"skipped {skipped} empty row(s); the output has one row per non-empty input row")
     return rows, columns
 
 
