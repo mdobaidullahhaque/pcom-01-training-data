@@ -67,6 +67,29 @@ def test_choice_keeps_without_unless_with_is_clearly_better():
     assert tr.choose(summary(0.40, 0.25, 0.06))[1] is True
 
 
+def test_lexicographic_orders_by_total_then_probability():
+    totals = np.array([0, 2, 2, 1, np.nan])
+    probability = np.array([0.99, 0.1, 0.9, 1.0, 0.5])
+    order = np.argsort(-tr.lexicographic(totals, probability), kind="stable")
+    assert list(order) == [2, 1, 3, 0, 4]
+
+
+def test_rank_average_is_between_zero_and_one_and_shares_ties():
+    scores = tr.rank_average(np.array([0, 0, 5, 1]), np.array([0.1, 0.2, 0.4, 0.3]))
+    assert ((scores > 0) & (scores <= 1)).all()
+    assert list(scores) == [0.3125, 0.4375, 1.0, 0.75]
+
+
+@pytest.mark.parametrize(
+    "rule, rank, lex, expected",
+    [(0.28, 0.30, 0.29, "rank_average"), (0.28, 0.29, 0.31, "lexicographic"), (0.28, 0.27, 0.28, "rule")],
+)
+def test_scorer_choice(rule, rank, lex, expected):
+    summary = {"rule_ghsa_total": {"pr_auc": (rule, 0)}, "rank_average": {"pr_auc": (rank, 0.01)},
+               "lexicographic": {"pr_auc": (lex, 0.01)}}
+    assert tr.choose_scorer(summary) == expected
+
+
 @pytest.mark.skipif(not (config.MODEL_DIR / "model_meta.json").exists(), reason="model not trained yet")
 def test_saved_meta_matches_features_py():
     meta = json.loads((config.MODEL_DIR / "model_meta.json").read_text(encoding="utf-8"))

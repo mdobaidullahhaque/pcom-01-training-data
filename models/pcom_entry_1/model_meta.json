@@ -1,4 +1,10 @@
 {
+  "scorer": {
+    "type": "lexicographic",
+    "uses_lightgbm": true,
+    "description": "ghsa_total + 0.5 * LightGBM probability: total first, probability breaks ties",
+    "cv_pr_auc": 0.2934065224192854
+  },
   "model": "LightGBM binary classifier, class-weighted",
   "target": "1 if any target_ghsa_*_count_90d > 0",
   "feature_names": [
@@ -253,6 +259,42 @@
         "recall_at_50": {
           "mean": 0.3538461538461538,
           "std": 0.037684457581279654
+        }
+      },
+      "rank_average": {
+        "pr_auc": {
+          "mean": 0.28081707128523103,
+          "std": 0.027457298955191663
+        },
+        "roc_auc": {
+          "mean": 0.8769801778285341,
+          "std": 0.0017753127491671099
+        },
+        "precision_at_50": {
+          "mean": 0.22799999999999998,
+          "std": 0.016
+        },
+        "recall_at_50": {
+          "mean": 0.4384615384615385,
+          "std": 0.03076923076923077
+        }
+      },
+      "lexicographic": {
+        "pr_auc": {
+          "mean": 0.2934065224192854,
+          "std": 0.0019610464567919855
+        },
+        "roc_auc": {
+          "mean": 0.8696060037523452,
+          "std": 0.0012898424708780532
+        },
+        "precision_at_50": {
+          "mean": 0.24,
+          "std": 0.0
+        },
+        "recall_at_50": {
+          "mean": 0.46153846153846156,
+          "std": 0.0
         }
       }
     },

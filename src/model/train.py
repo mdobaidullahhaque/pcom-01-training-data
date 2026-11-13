@@ -21,6 +21,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from scipy.stats import rankdata
 
 import config
 from src.model import features as ft
@@ -122,11 +123,12 @@ def model_names():
 
 
 def cross_validate(sets, y):
-    """Return ({model: [metrics per repeat]}, {model: mean out-of-fold probability per row})."""
+    """Return ({model: [metrics per repeat]}, {model: mean out-of-fold score per row}, [out-of-fold per repeat])."""
     splitter = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
     splits = list(splitter.split(np.zeros(len(y)), y))
     results = {name: [] for name in model_names()}
     averaged = {name: np.zeros(len(y)) for name in model_names()}
+    per_repeat = []
     X_with, names_with = sets["with"]
     for repeat in range(N_REPEATS):
         oof = {name: np.zeros(len(y)) for name in model_names()}
@@ -140,8 +142,32 @@ def cross_validate(sets, y):
         for name, scores in oof.items():
             results[name].append(metrics(scores, y))
             averaged[name] += scores / N_REPEATS
+        per_repeat.append(oof)
         print(f"  repeat {repeat + 1}/{N_REPEATS} done")
-    return results, averaged
+    return results, averaged, per_repeat
+
+
+def rank_average(rule, probability):
+    """Mean of the two normalised ranks (0 to 1, ties share their average rank)."""
+    return (rankdata(rule) / len(rule) + rankdata(probability) / len(probability)) / 2
+
+
+def lexicographic(ghsa_total, probability):
+    """Order by past GHSA total; the LightGBM probability (0 to 1) only breaks ties within a total."""
+    return np.nan_to_num(ghsa_total) + 0.5 * probability
+
+
+def combined_scores(oof, X_with, names_with, lgbm_name):
+    return {
+        "rank_average": rank_average(oof["rule_ghsa_total"], oof[lgbm_name]),
+        "lexicographic": lexicographic(X_with[:, names_with.index("ghsa_total")], oof[lgbm_name]),
+    }
+
+
+def choose_scorer(summary):
+    """The combination with the best PR-AUC if it beats the rule alone, otherwise the rule."""
+    best = max(("rank_average", "lexicographic"), key=lambda name: summary[name]["pr_auc"][0])
+    return best if summary[best]["pr_auc"][0] > summary["rule_ghsa_total"]["pr_auc"][0] else "rule"
 
 
 def summarize(results):
@@ -199,9 +225,20 @@ def main():
     sets = feature_sets(rows)
     print(f"{len(y)} rows, {y.sum()} positive ({y.mean():.2%}); features with {len(sets['with'][1])}, without {len(sets['without'][1])}")
     print(f"CV: {N_REPEATS} x stratified {N_SPLITS}-fold, seed {SEED}")
-    results, averaged = cross_validate(sets, y)
+    results, averaged, per_repeat = cross_validate(sets, y)
+    chosen, use_reference, best, difference, margin = choose(summarize(results))
+    X_with, names_with = sets["with"]
+    for name in ("rank_average", "lexicographic"):
+        results[name] = []
+        averaged[name] = np.zeros(len(y))
+    for oof in per_repeat:
+        for name, scores in combined_scores(oof, X_with, names_with, chosen).items():
+            results[name].append(metrics(scores, y))
+            averaged[name] += scores / N_REPEATS
     cv_seconds = time.perf_counter() - started
     summary = summarize(results)
+    scorer = choose_scorer(summary)
+    scorer_model = {"rule": "rule_ghsa_total", "rank_average": "rank_average", "lexicographic": "lexicographic"}[scorer]
 
     print(f"\nRandom baseline PR-AUC (positive rate): {y.mean():.4f}")
     print(f"{'model':28} {'PR-AUC':>17} {'ROC-AUC':>17} {'prec@50':>17} {'recall@50':>17}")
@@ -209,11 +246,12 @@ def main():
         cells = "".join(f"{values[m][0]:9.3f} ± {values[m][1]:5.3f}" for m in ("pr_auc", "roc_auc", "precision_at_50", "recall_at_50"))
         print(f"{name:28} {cells}")
 
-    chosen, use_reference, best, difference, margin = choose(summary)
     setting = chosen.rsplit("_", 1)[0]
     print(f"\nBest LightGBM with: {best['with']}, without: {best['without']}; "
           f"PR-AUC difference {difference:+.3f}, needed > {margin:.3f}")
-    print(f"Chosen: {chosen} (reference-date features {'used' if use_reference else 'not used'})")
+    print(f"Chosen LightGBM: {chosen} (reference-date features {'used' if use_reference else 'not used'})")
+    print(f"Chosen scorer: {scorer} (rule PR-AUC {summary['rule_ghsa_total']['pr_auc'][0]:.3f}, "
+          f"rank_average {summary['rank_average']['pr_auc'][0]:.3f}, lexicographic {summary['lexicographic']['pr_auc'][0]:.3f})")
 
     X, names = sets["with" if use_reference else "without"]
     fit_started = time.perf_counter()
@@ -223,6 +261,16 @@ def main():
     explanation = explain(booster, X, names)
 
     meta = {
+        "scorer": {
+            "type": scorer,
+            "uses_lightgbm": scorer != "rule",
+            "description": {
+                "rule": "ghsa_total, ties broken by ghsa_12m",
+                "rank_average": "mean of the normalised ranks of the rule and the LightGBM probability",
+                "lexicographic": "ghsa_total + 0.5 * LightGBM probability: total first, probability breaks ties",
+            }[scorer],
+            "cv_pr_auc": summary[scorer_model]["pr_auc"][0],
+        },
         "model": "LightGBM binary classifier, class-weighted",
         "target": "1 if any target_ghsa_*_count_90d > 0",
         "feature_names": names,
@@ -244,7 +292,8 @@ def main():
     oof_rows = [
         {"purl": row["purl"], "y": int(label),
          **{column: int(value) for column, value in zip(TARGET_COLUMNS, count_row)},
-         **{f"p_{name}": round(float(averaged[name][index]), 6) for name in model_names()}}
+         **{f"p_{name}": round(float(averaged[name][index]), 6) for name in [*model_names(), "rank_average", "lexicographic"]},
+         "score_chosen": round(float(averaged[scorer_model][index]), 6)}
         for index, (row, label, count_row) in enumerate(zip(rows, y, counts))
     ]
     save(config.MODEL_DIR, booster, meta, oof_rows)
