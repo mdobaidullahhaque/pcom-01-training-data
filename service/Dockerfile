@@ -1,5 +1,5 @@
 # PCOM prediction service (Homework 6). Build from the REPO ROOT, not from service/:
-#   docker build -f service/Dockerfile -t ml-prediction-api .
+#   docker build -f service/Dockerfile -t ml-prediction-api:pcom .
 #
 # Full python:3.12 image, not python:3.12-slim: LightGBM's Linux wheel links libgomp.so.1 (OpenMP)
 # without bundling it, and slim would need apt-get to install libgomp1. The FAU network blocks

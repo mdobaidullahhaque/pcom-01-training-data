@@ -49,8 +49,8 @@ Run this from the repo root, not from `service/`:
 
 ```bash
 cd ~/pcom
-docker tag ml-prediction-api ml-prediction-api:previous 2>/dev/null || true   # keep the old image for rollback
-docker build -f service/Dockerfile -t ml-prediction-api .
+docker tag ml-prediction-api:pcom ml-prediction-api:previous 2>/dev/null || true   # keep the running image for rollback
+docker build -f service/Dockerfile -t ml-prediction-api:pcom .
 ```
 
 The image is based on the full `python:3.12` image, not `python:3.12-slim`. LightGBM needs `libgomp.so.1`, and the slim image would have to install it with `apt-get`. That doesn't work here: the FAU network blocks apt's plain HTTP (port 80) to `deb.debian.org`, so the connection times out. The full image already includes `libgomp1`, and `pip` uses HTTPS, which works. The full image is larger (about 1 GB, against about 150 MB for slim), and the first build downloads it once.
@@ -68,7 +68,7 @@ Keep both port mappings and the restart policy:
 ```bash
 docker stop ml-api
 docker rm ml-api
-docker run -d --name ml-api --restart unless-stopped -p 80:8000 -p 8000:8000 ml-prediction-api
+docker run -d --name ml-api --restart unless-stopped -p 80:8000 -p 8000:8000 ml-prediction-api:pcom
 ```
 
 ## 5. Health check
@@ -153,5 +153,5 @@ docker run -d --name ml-api --restart unless-stopped -p 80:8000 -p 8000:8000 ml-
 ## Cleanup (optional, later)
 
 ```bash
-docker image prune -f   # removes untagged old images; keeps ml-prediction-api and :previous
+docker image prune -f   # removes untagged old images; keeps ml-prediction-api:pcom and :previous
 ```
