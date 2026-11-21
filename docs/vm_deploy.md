@@ -53,7 +53,13 @@ docker tag ml-prediction-api ml-prediction-api:previous 2>/dev/null || true   # 
 docker build -f service/Dockerfile -t ml-prediction-api .
 ```
 
-The build ends with `[self-check] OK: score=... output=[...]`. If the model cannot load or score, for example because of a wrong hash or missing `libgomp1`, the build fails at that step. The container you are running now keeps running in that case.
+The image is based on the full `python:3.12` image, not `python:3.12-slim`. LightGBM needs `libgomp.so.1`, and the slim image would have to install it with `apt-get`. That doesn't work here: the FAU network blocks apt's plain HTTP (port 80) to `deb.debian.org`, so the connection times out. The full image already includes `libgomp1`, and `pip` uses HTTPS, which works. The full image is larger (about 1 GB, against about 150 MB for slim), and the first build downloads it once.
+
+The build checks two things and fails at the step that breaks:
+- `libgomp.so.1` must be present. If it is missing, the build stops with `ERROR: libgomp.so.1 not found in the base image`.
+- The model must load and score. The build ends with `[self-check] OK: score=... output=[...]`. A wrong model hash, for example, fails here instead.
+
+If the build fails, the container you are running now keeps running.
 
 ## 4. Replace the running container
 

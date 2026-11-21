@@ -1,16 +1,20 @@
 # PCOM prediction service (Homework 6). Build from the REPO ROOT, not from service/:
 #   docker build -f service/Dockerfile -t ml-prediction-api .
-FROM python:3.12-slim
+#
+# Full python:3.12 image, not python:3.12-slim: LightGBM's Linux wheel links libgomp.so.1 (OpenMP)
+# without bundling it, and slim would need apt-get to install libgomp1. The FAU network blocks
+# apt's HTTP (port 80) to deb.debian.org, so apt-get cannot run there. The full image already
+# contains libgomp1 (a dependency of its gcc). pip uses HTTPS and works.
+FROM python:3.12
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# LightGBM's Linux wheel links libgomp.so.1 (OpenMP) but does not bundle it.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+# Fail early and clearly if a future base image drops libgomp.so.1.
+RUN ldconfig -p | grep -q "libgomp.so.1" \
+    || { echo "ERROR: libgomp.so.1 not found in the base image; LightGBM cannot load without it" >&2; exit 1; }
 
 WORKDIR /app
 

@@ -185,4 +185,7 @@ def test_docker_files_list_every_runtime_file():
         assert f"!{path}" in ignore, path
         name = path.rsplit("/", 1)[-1]
         assert name in dockerfile, path
-    assert "libgomp1" in dockerfile and "python:3.12-slim" in dockerfile
+    instructions = [line.strip() for line in dockerfile.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    assert "FROM python:3.12" in instructions  # full image: it already contains libgomp1
+    assert not any("apt-get" in line for line in instructions), "apt-get cannot reach Debian from the FAU network"
+    assert any("ldconfig -p" in line and "libgomp.so.1" in line for line in instructions)
