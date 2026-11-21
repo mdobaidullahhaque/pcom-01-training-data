@@ -1,0 +1,13 @@
+# Prediction service (Docker image, Python 3.12). Pinned to the versions tested locally.
+# No scikit-learn or joblib: they are needed for training only. Plain fastapi, not
+# fastapi[standard]: the extras (CLI, cloud, telemetry) are not needed to serve the app.
+fastapi==0.165.0
+uvicorn==0.54.0
+pydantic==2.14.4
+requests==2.34.2
+pandas==3.1.1
+numpy==2.5.4
+lightgbm==4.7.0
+scipy==1.18.1
+narwhals==2.28.0
+python-dateutil==4.0.0

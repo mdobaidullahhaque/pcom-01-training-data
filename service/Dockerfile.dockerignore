@@ -1,0 +1,13 @@
+# Build context = repo root. Send only the files service/Dockerfile copies (BuildKit reads this
+# file because it sits next to the Dockerfile; without BuildKit the COPY list still limits the image).
+*
+!config.py
+!predict.py
+!src/__init__.py
+!src/model/__init__.py
+!src/model/features.py
+!src/model/counts.py
+!models/pcom_entry_1/model.txt
+!models/pcom_entry_1/model_meta.json
+!service/main.py
+!service/requirements.txt
