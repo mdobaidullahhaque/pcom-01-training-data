@@ -5,7 +5,8 @@
                  -> {"status": "prediction started"}; a background task downloads the input CSV,
                     runs run_model(df) and uploads prediction.csv as multipart field "predictions".
 
-The prediction itself is predict.score_rows() from pcom-entry-1 (scorer D + EV floats); nothing
+The prediction itself is predict.score_rows() (scorer D; float strategy EV, HR or HRMAX from
+model_meta.json, default HRMAX since Homework 7; env PCOM_FLOAT_STRATEGY overrides it); nothing
 is duplicated here. Run from the repo root:
   local:  .venv\\Scripts\\python.exe -m uvicorn service.main:app --port 8000
   Docker: see service/Dockerfile and docs/vm_deploy.md
@@ -13,6 +14,7 @@ is duplicated here. Run from the repo root:
 """
 import io
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -37,6 +39,7 @@ DECIMALS = 6
 HTTP_TIMEOUT = 30
 HTTP_ATTEMPTS = 3
 RETRY_DELAY = 2  # seconds; the wait grows with each attempt
+FLOAT_STRATEGY_ENV = "PCOM_FLOAT_STRATEGY"
 
 app = FastAPI(title="ML Prediction API")
 
@@ -94,17 +97,31 @@ def clean(values):
     return result
 
 
+def float_strategy_override():
+    """PCOM_FLOAT_STRATEGY (EV, HR or HRMAX) overrides model_meta.json, e.g. for a quick rollback to EV.
+
+    Empty or unset: use default_float_strategy from model_meta.json. Unknown names are ignored.
+    """
+    value = os.environ.get(FLOAT_STRATEGY_ENV, "").strip().upper()
+    if value and value not in predict.FLOAT_STRATEGIES:
+        log(f"[run_model] ignoring {FLOAT_STRATEGY_ENV}={value!r} (not one of {', '.join(predict.FLOAT_STRATEGIES)})")
+        return None
+    return value or None
+
+
 def predict_one(df):
-    """Return (5 EV floats, info dict). Raises if the model cannot give a real prediction."""
+    """Return (5 floats, info dict). Raises if the model cannot give a real prediction."""
     rows = frame_to_rows(df)
     if not rows:
         raise ValueError("the input has no data rows")
     index, by_date = choose_row(rows)
     row = rows[index]
-    _, scores, failed, expected = predict.score_rows([row], None)
+    details = {}
+    _, scores, failed, expected = predict.score_rows([row], None, float_strategy_override(), details)
     if failed or expected is None:
         raise RuntimeError("the model could not score the row" if failed else "model_meta.json has no EV settings")
     info = {
+        "strategy": details.get("float_strategy", "?"),
         "rows": len(rows),
         "chosen": index + 1,
         "rule": "newest published_at" if by_date else "last row (no readable published_at)",
@@ -120,7 +137,7 @@ def run_model(df: pd.DataFrame) -> pd.DataFrame:
     started = time.perf_counter()
     try:
         values, info = predict_one(df)
-        log(f"[run_model] rows={info['rows']} chosen=row {info['chosen']} ({info['rule']}, "
+        log(f"[run_model] strategy={info['strategy']} rows={info['rows']} chosen=row {info['chosen']} ({info['rule']}, "
             f"published_at={info['published_at']}) score={info['score']:.4f} "
             f"output={values} time={time.perf_counter() - started:.2f}s")
     except Exception as error:
@@ -222,7 +239,7 @@ def self_check():
     values, info = predict_one(sample)
     if not any(values):
         raise RuntimeError(f"self-check gave all zeros: {values}")
-    log(f"[self-check] OK: score={info['score']:.4f} output={values}")
+    log(f"[self-check] OK: strategy={info['strategy']} score={info['score']:.4f} output={values}")
 
 
 if __name__ == "__main__":

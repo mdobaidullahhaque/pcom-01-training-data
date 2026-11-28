@@ -1,4 +1,4 @@
-# Class round checklist (pcom-entry-1)
+# Class round checklist (pcom-entry-1; float values HRMAX since Homework 7)
 
 ## Before the round
 
@@ -16,7 +16,16 @@
    ```powershell
    .venv\Scripts\python.exe predict.py docs\sample_input.csv -o $env:TEMP\practice.csv
    ```
-   You should see `All 85 expected input columns found`, two 5-row tables, an `Output:` line and a `Time:` line. In the second table, **Values for the form (float)**, `electron`, `next` and `sequelize` show `0.061 0.364 0.121 0.030 0.000`, and `snazzy` and `zpartlist` show `0.000 0.000 0.002 0.000 0.000`.
+   You should see `All 85 expected input columns found`, `Float strategy HRMAX: ...`, two 5-row tables, an `Output:` line and a `Time:` line. The second table, **Values for the form (float)**, starts with `(float strategy HRMAX)` and shows:
+   ```text
+    row  purl                          low     mod    high    crit    unkn
+      1  pkg:npm/electron@37.2.5     0.061   0.364   0.125   0.030   0.000
+      2  pkg:npm/snazzy@9.0.0        0.000   0.000   0.002   0.000   0.000
+      3  pkg:npm/next@15.4.5         0.500   0.364   0.375   0.125   0.000
+      4  pkg:npm/sequelize@6.37.7    0.061   0.364   0.121   0.030   0.000
+      5  pkg:npm/zpartlist@0.0.42    0.000   0.000   0.002   0.000   0.000
+   ```
+   HRMAX (the default since Homework 7) takes, per severity, the larger of the EV value and the GHSAs of the last 12 months divided by 8. That is why `electron` and `next` differ from `sequelize`. With `--float-strategy EV` you get the old pcom-entry-1/2 values: `electron`, `next` and `sequelize` all show `0.061 0.364 0.121 0.030 0.000`.
 
 ## During the round
 
@@ -28,11 +37,12 @@
 3. **Find the package** in the second table, **Values for the form (float)**. Use the `purl`, or `row` (the row number in the input file, not counting the header):
    ```text
    Values for the form (float):
+   (float strategy HRMAX)
     row  purl                          low     mod    high    crit    unkn
-      1  pkg:npm/electron@37.2.5     0.061   0.364   0.121   0.030   0.000
+      3  pkg:npm/next@15.4.5         0.500   0.364   0.375   0.125   0.000
    ```
    Ignore the first table (whole numbers); it is the schema output, not the form values.
-4. **Type the 5 values into the form's 5 fields, in this order:** low, moderate, high, critical, unknown. Unknown is always `0`. For the example above, that is `0.061`, `0.364`, `0.121`, `0.030` and `0`.
+4. **Type the 5 values into the form's 5 fields, in this order:** low, moderate, high, critical, unknown. Unknown is usually `0`; type what the table shows. For the example above, that is `0.500`, `0.364`, `0.375`, `0.125` and `0`.
 5. **Only if the round is announced to be scored by absolute error** (mean absolute error, MAE): type `0` in all 5 fields instead. All zeros has the lowest absolute error, while the float values have the lowest squared error.
 6. To have the float values in a file as well, add `--float`. The file `round1_predictions.csv` then holds them, next to the input file:
    ```powershell

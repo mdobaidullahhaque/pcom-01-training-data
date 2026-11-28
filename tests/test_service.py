@@ -17,7 +17,10 @@ from service.fake_compy import TARGET_COLUMNS, FakeCompy, check_prediction_csv
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUND1 = ROOT / "tests" / "data" / "round1_input.csv"
-ROUND1_EXPECTED = [0.060606, 0.363636, 0.121212, 0.030303, 0.0]
+# HRMAX (Homework 7 default): max(EV top bucket, last-12-month GHSAs / 8) per severity.
+# Round 1 had 3 low, 14 moderate, 1 high, 0 critical GHSAs in M0..M11.
+ROUND1_EXPECTED = [0.375, 1.75, 0.125, 0.030303, 0.0]
+ROUND1_EV = [0.060606, 0.363636, 0.121212, 0.030303, 0.0]  # pcom-entry-2 values
 ZEROS = [0.0] * 5
 
 
@@ -29,6 +32,7 @@ def client():
 @pytest.fixture(autouse=True)
 def no_retry_wait(monkeypatch):
     monkeypatch.setattr(service, "RETRY_DELAY", 0)
+    monkeypatch.delenv(service.FLOAT_STRATEGY_ENV, raising=False)
 
 
 def run_round(client, input_bytes, tmp_path, path="/input.csv"):
@@ -78,7 +82,8 @@ def test_round1_full_flow(client, tmp_path, capsys):
     assert values_of(upload) == ROUND1_EXPECTED
     assert (tmp_path / "prediction.csv").read_text(encoding="utf-8") == upload["text"]
     log = capsys.readouterr().out
-    assert "[run_model] rows=18 chosen=row 18 (newest published_at, published_at=2026-06-17T10:33:28.065Z)" in log
+    assert ("[run_model] strategy=HRMAX rows=18 chosen=row 18 (newest published_at, "
+            "published_at=2026-06-17T10:33:28.065Z)") in log
     assert "Evaluation result: {'status': 'received', 'valid': True" in log
 
 
@@ -189,3 +194,42 @@ def test_docker_files_list_every_runtime_file():
     assert "FROM python:3.12" in instructions  # full image: it already contains libgomp1
     assert not any("apt-get" in line for line in instructions), "apt-get cannot reach Debian from the FAU network"
     assert any("ldconfig -p" in line and "libgomp.so.1" in line for line in instructions)
+
+
+# --- Homework 7: float strategy setting ---
+
+def test_switching_back_to_ev_gives_the_old_values(monkeypatch, capsys):
+    frame = pd.read_csv(ROUND1, dtype=str, keep_default_na=False)
+    monkeypatch.setenv(service.FLOAT_STRATEGY_ENV, "EV")
+    assert service.run_model(frame).iloc[0].tolist() == ROUND1_EV
+    assert "[run_model] strategy=EV " in capsys.readouterr().out
+    monkeypatch.setenv(service.FLOAT_STRATEGY_ENV, "hr")
+    assert service.run_model(frame).iloc[0].tolist() == [0.375, 1.75, 0.125, 0.0, 0.0]
+
+
+def test_switching_back_to_ev_through_model_meta(monkeypatch, tmp_path):
+    import json
+    import shutil
+    model_dir = tmp_path / "pcom_entry_1"
+    shutil.copytree(service.predict.MODEL_DIR, model_dir)
+    meta = json.loads((model_dir / "model_meta.json").read_text(encoding="utf-8"))
+    meta["counts"]["default_float_strategy"] = "EV"
+    (model_dir / "model_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    monkeypatch.setattr(service.predict, "MODEL_DIR", model_dir)
+    frame = pd.read_csv(ROUND1, dtype=str, keep_default_na=False)
+    assert service.run_model(frame).iloc[0].tolist() == ROUND1_EV
+
+
+def test_unknown_strategy_override_is_ignored(monkeypatch, capsys):
+    monkeypatch.setenv(service.FLOAT_STRATEGY_ENV, "BOGUS")
+    frame = pd.read_csv(ROUND1, dtype=str, keep_default_na=False)
+    assert service.run_model(frame).iloc[0].tolist() == ROUND1_EXPECTED
+    assert "ignoring PCOM_FLOAT_STRATEGY='BOGUS'" in capsys.readouterr().out
+
+
+def test_no_recent_ghsas_keep_the_ev_values():
+    frame = pd.read_csv(ROUND1, dtype=str, keep_default_na=False)
+    for name in frame.columns:
+        if name.startswith("ghsa_") and "_count_M" in name:
+            frame[name] = "0"
+    assert service.run_model(frame).iloc[0].tolist() == ROUND1_EV  # all-time total keeps the top bucket

@@ -7,6 +7,11 @@ Strategies:
   EV  expected values (floats): score buckets, each predicting the unrounded mean of each target
       column; the packages at or above the S2 threshold form the top bucket
 
+Float strategies (the values the service uploads; default_float_strategy in model_meta.json):
+  EV     the EV buckets above
+  HR     half-rate (Homework 7): per severity, the GHSAs of the last 12 months (M0..M11) / 8
+  HRMAX  per severity, max(EV, HR): packages without recent GHSAs keep the small EV values
+
 Fitting reads models/pcom_entry_1/oof_predictions.csv and writes the strategy settings and the
 evaluation table into model_meta.json, so predict.py can switch strategy without retraining.
 
@@ -19,6 +24,7 @@ import math
 import numpy as np
 
 import config
+from src.model import features as ft
 
 SEVERITIES = config.SEVERITIES  # low, moderate, high, critical, unknown
 TARGET_COLUMNS = [f"target_ghsa_{severity}_count_90d" for severity in SEVERITIES]
@@ -29,6 +35,11 @@ MIN_BUCKET_ROWS = 30
 FALLBACK_SEVERITY = "moderate"
 DEFAULT_STRATEGY = "S2"
 CV_FOLDS = 5
+FLOAT_STRATEGIES = ("EV", "HR", "HRMAX")
+DEFAULT_FLOAT_STRATEGY = "HRMAX"
+HALF_RATE_DIVISOR = 8  # 12 months / 8 = half of the 90-day rate (2026-11-23 experiment)
+BUSY_GHSA_TOTAL = 7  # evaluation groups: busy = all-time GHSA total >= 7
+HOT_GHSA_12M = 5  # hot = 5 or more GHSAs in the last 12 months
 
 
 def clean_scores(scores):
@@ -109,6 +120,42 @@ def predict_expected(scores, settings):
     return result
 
 
+def known_count(value):
+    """A count from a CSV cell: missing, unreadable, negative or non-finite values give 0.0."""
+    try:
+        number = ft.number(value)
+    except Exception:
+        return 0.0
+    return number if math.isfinite(number) and number > 0 else 0.0
+
+
+def half_rate(rows, divisor=HALF_RATE_DIVISOR):
+    """Return an (n, 5) float array: per severity, the sum of ghsa_<s>_count_M0..M11 / divisor.
+
+    Missing or unreadable monthly values count as 0, so a row without GHSA columns gives 0.
+    """
+    result = np.zeros((len(rows), len(SEVERITIES)), dtype=float)
+    for index, row in enumerate(rows):
+        row = row if isinstance(row, dict) else {}
+        for position, severity in enumerate(SEVERITIES):
+            total = sum(known_count(row.get(f"ghsa_{severity}_count_M{month}"))
+                        for month in range(config.FEATURE_MONTHS))
+            result[index, position] = total / divisor
+    return result
+
+
+def predict_float(scores, rows, settings, strategy):
+    """Return an (n, 5) float array (>= 0) for a float strategy: EV, HR or HRMAX."""
+    if strategy not in FLOAT_STRATEGIES:
+        raise ValueError(f"unknown float strategy {strategy!r}; choose one of {FLOAT_STRATEGIES}")
+    if strategy == "EV":
+        return predict_expected(scores, settings)
+    hr = half_rate(rows, settings.get("HR", {}).get("divisor", HALF_RATE_DIVISOR))
+    if strategy == "HR":
+        return hr
+    return np.maximum(predict_expected(scores, settings), hr)
+
+
 def predict_counts(scores, settings, strategy):
     """Return an (n, 5) int array of non-negative counts; unknown is always 0. Never raises on bad scores."""
     scores = clean_scores(scores)
@@ -142,6 +189,54 @@ def evaluate(predicted, actual):
     }
 
 
+def cv_folds(counts, seed=config.RANDOM_SEED):
+    """Fold number per row, stratified by any-positive; the same folds as cross_validated."""
+    actual_any = counts.sum(axis=1) > 0
+    order = np.random.default_rng(seed).permutation(len(counts))
+    folds = np.zeros(len(counts), dtype=int)
+    for label in (False, True):
+        members = order[actual_any[order] == label]
+        folds[members] = np.arange(len(members)) % CV_FOLDS
+    return folds
+
+
+def cross_validated_expected(scores, counts, seed=config.RANDOM_SEED):
+    """EV values for every row, with T and the EV buckets fitted on the other 4 folds."""
+    folds = cv_folds(counts, seed)
+    predicted = np.zeros(counts.shape)
+    for fold in range(CV_FOLDS):
+        train, test = folds != fold, folds == fold
+        threshold = fit_threshold(scores[train], counts[train])["threshold"]
+        rule = {"EV": fit_expected(scores[train], counts[train], threshold)}
+        predicted[test] = predict_expected(scores[test], rule)
+    return predicted
+
+
+def load_training_rows(path=config.OUTPUT_CSV):
+    with open(path, newline="", encoding="utf-8") as handle:
+        return {row["purl"]: row for row in csv.DictReader(handle)}
+
+
+def float_evaluation(scores, counts, rows):
+    """MSE and MAE per row (summed over the 5 targets) of EV (cross-validated), HR and HRMAX,
+    overall, for busy rows (GHSA total >= 7) and hot rows (>= 5 GHSAs in the last 12 months)."""
+    ev = cross_validated_expected(scores, counts)
+    hr = half_rate(rows)
+    predicted = {"EV": ev, "HR": hr, "HRMAX": np.maximum(ev, hr)}
+    total = np.array([sum(known_count(row.get(f"ghsa_{s}_count")) for s in SEVERITIES) for row in rows])
+    last_12 = hr.sum(axis=1) * HALF_RATE_DIVISOR
+    groups = {"all": np.ones(len(rows), dtype=bool), "busy": total >= BUSY_GHSA_TOTAL,
+              "hot": last_12 >= HOT_GHSA_12M}
+    table = {}
+    for name, values in predicted.items():
+        table[name] = {}
+        for group, mask in groups.items():
+            errors = values[mask] - counts[mask]
+            table[name][group] = {"rows": int(mask.sum()), "mse_sum": float((errors ** 2).sum(axis=1).mean()),
+                                  "mae_sum": float(np.abs(errors).sum(axis=1).mean())}
+    return table
+
+
 def cross_validated(scores, counts, seed=config.RANDOM_SEED):
     """Honest check: fit T and the EV buckets on 4 folds of the out-of-fold scores, test on the fifth."""
     actual_any = counts.sum(axis=1) > 0
@@ -160,26 +255,31 @@ def cross_validated(scores, counts, seed=config.RANDOM_SEED):
     return {name: evaluate(values, counts) for name, values in predicted.items()}
 
 
-def load_oof(path=config.MODEL_DIR / "oof_predictions.csv"):
+def load_oof(path=config.MODEL_DIR / "oof_predictions.csv", with_purls=False):
     with open(path, newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     scores = np.array([float(row["score_chosen"]) for row in rows])
     counts = np.array([[int(row[column]) for column in TARGET_COLUMNS] for row in rows])
+    if with_purls:
+        return scores, counts, [row["purl"] for row in rows]
     return scores, counts
 
 
 def fit_all(scores, counts):
     settings = {"S0": {}, "S1": fit_buckets(scores, counts), "S2": fit_threshold(scores, counts)}
     settings["EV"] = fit_expected(scores, counts, settings["S2"]["threshold"])
+    settings["HR"] = {"divisor": HALF_RATE_DIVISOR, "months": config.FEATURE_MONTHS}
     table = {strategy: evaluate(predict_counts(scores, settings, strategy), counts) for strategy in STRATEGIES}
     table["EV"] = evaluate(predict_expected(scores, settings), counts)
     return settings, table
 
 
 def main():
-    scores, counts = load_oof()
+    scores, counts, purls = load_oof(with_purls=True)
     settings, table = fit_all(scores, counts)
     honest = cross_validated(scores, counts)
+    training = load_training_rows()
+    floats = float_evaluation(scores, counts, [training[purl] for purl in purls])
     meta_path = config.MODEL_DIR / "model_meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     meta["counts"] = {
@@ -187,6 +287,12 @@ def main():
         "strategies": settings,
         "evaluation_on_oof": table,
         "cross_validated": honest,
+        "default_float_strategy": DEFAULT_FLOAT_STRATEGY,
+        "float_strategies": list(FLOAT_STRATEGIES),
+        "float_evaluation": floats,
+        "float_note": "EV is cross-validated (buckets fitted on 4/5); HR has no fitted values, but the "
+                      "divisor 8 was chosen on this same data (2026-11-23 experiment). busy = GHSA total "
+                      f">= {BUSY_GHSA_TOTAL}, hot = >= {HOT_GHSA_12M} GHSAs in the last 12 months.",
         "note": "S1, S2 and EV are fitted and evaluated on the same out-of-fold scores, so those values "
                 "are optimistic; cross_validated fits T and the EV buckets on 4/5 and tests on 1/5.",
     }
@@ -205,7 +311,12 @@ def main():
     for metric in metrics:
         print(f"{metric:24}" + "".join(f"{table[s][metric]:10.4f}" for s in names)
               + "".join(f"{honest[s][metric]:10.4f}" for s in honest))
-    print(f"Saved to {meta_path} (default {DEFAULT_STRATEGY})")
+    print("\nFloat strategies, per row summed over 5 targets (EV cross-validated):")
+    print(f"{'strategy':10}" + "".join(f"{g + ' MSE':>11}{g + ' MAE':>11}" for g in floats["EV"]))
+    for name, groups in floats.items():
+        print(f"{name:10}" + "".join(f"{v['mse_sum']:11.4f}{v['mae_sum']:11.4f}" for v in groups.values()))
+    print("rows per group:", {g: v["rows"] for g, v in floats["EV"].items()})
+    print(f"Saved to {meta_path} (default {DEFAULT_STRATEGY}, float default {DEFAULT_FLOAT_STRATEGY})")
 
 
 if __name__ == "__main__":

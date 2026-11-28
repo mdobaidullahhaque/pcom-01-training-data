@@ -486,6 +486,10 @@
             0.0
           ]
         ]
+      },
+      "HR": {
+        "divisor": 8,
+        "months": 12
       }
     },
     "evaluation_on_oof": {
@@ -597,6 +601,66 @@
         "predicted_positive_rows": 1805
       }
     },
+    "default_float_strategy": "HRMAX",
+    "float_strategies": [
+      "EV",
+      "HR",
+      "HRMAX"
+    ],
+    "float_evaluation": {
+      "EV": {
+        "all": {
+          "rows": 1912,
+          "mse_sum": 0.027784614205521113,
+          "mae_sum": 0.03521658364915809
+        },
+        "busy": {
+          "rows": 31,
+          "mse_sum": 0.9200473558229336,
+          "mae_sum": 0.7384290400057034
+        },
+        "hot": {
+          "rows": 5,
+          "mse_sum": 2.861383991088519,
+          "mae_sum": 1.4955475259410698
+        }
+      },
+      "HR": {
+        "all": {
+          "rows": 1912,
+          "mse_sum": 0.02807923640167364,
+          "mae_sum": 0.03347280334728033
+        },
+        "busy": {
+          "rows": 31,
+          "mse_sum": 0.8422379032258065,
+          "mae_sum": 0.6491935483870968
+        },
+        "hot": {
+          "rows": 5,
+          "mse_sum": 2.784375,
+          "mae_sum": 1.825
+        }
+      },
+      "HRMAX": {
+        "all": {
+          "rows": 1912,
+          "mse_sum": 0.028320487637601616,
+          "mae_sum": 0.04824447078652682
+        },
+        "busy": {
+          "rows": 31,
+          "mse_sum": 0.8398712827344028,
+          "mae_sum": 0.7859929408036248
+        },
+        "hot": {
+          "rows": 5,
+          "mse_sum": 2.7697363714393317,
+          "mae_sum": 1.8473689475790316
+        }
+      }
+    },
+    "float_note": "EV is cross-validated (buckets fitted on 4/5); HR has no fitted values, but the divisor 8 was chosen on this same data (2026-11-23 experiment). busy = GHSA total >= 7, hot = >= 5 GHSAs in the last 12 months.",
     "note": "S1, S2 and EV are fitted and evaluated on the same out-of-fold scores, so those values are optimistic; cross_validated fits T and the EV buckets on 4/5 and tests on 1/5."
   }
 }

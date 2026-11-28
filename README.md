@@ -100,9 +100,10 @@ Everything `predict.py` needs is in git: `predict.py`, `config.py`, `src/model/f
 
 - **Input:** a CSV in the PCOM-01 record schema. Comma or semicolon, UTF-8 with or without BOM (Windows-1252 as a fallback), column names in any order or case. Extra columns are ignored, and missing columns or values are treated as unknown. Rows where every cell is empty are skipped, with a notice.
 - **Output:** `<input name>_predictions.csv` next to the input, unless `-o` is given. It holds exactly `target_ghsa_low_count_90d`, `target_ghsa_moderate_count_90d`, `target_ghsa_high_count_90d`, `target_ghsa_critical_count_90d` and `target_ghsa_unknown_count_90d`, as non-negative integers, one row per input row, in the same order. The screen shows the same numbers with each row's `purl` and score.
-- **Values for the form (float):** a second table on screen shows the expected counts (strategy EV, 3 decimals) for each package. These are the numbers to type into the class form, which asks for floats.
-- **`--float`:** writes the EV values (6 decimals) to the output CSV instead of the integers.
-- **`--strategy`:** chooses the integer counts: `S2` (default) or `S0` (all zeros). `S1` is also accepted, but it predicts all zeros on this data too. The float table always shows EV.
+- **Values for the form (float):** a second table on screen shows the float values (3 decimals) for each package, from the float strategy named above it (HRMAX by default since Homework 7; see "Homework 7 refinement"). These are the numbers to type into the class form, which asks for floats.
+- **`--float`:** writes the float values (6 decimals) to the output CSV instead of the integers.
+- **`--float-strategy EV|HR|HRMAX`:** chooses the float values (default: `default_float_strategy` in `model_meta.json`, HRMAX). `EV` gives the pcom-entry-1/2 values.
+- **`--strategy`:** chooses the integer counts: `S2` (default) or `S0` (all zeros). `S1` is also accepted, but it predicts all zeros on this data too.
 - **Exit codes:** 0 = done; 1 = output written, but some or all rows fell back to zeros (for example, the model files are missing or do not match their hash); 2 = the input could not be read or the output could not be written.
 
 ### How it works
@@ -163,3 +164,29 @@ This runs cross-validation, trains the final model, fits the counts rule, and wr
 - **EV is coarse:** it has only 4 buckets, so every package in a bucket gets the same 5 values.
 - **M0 assumption:** M0 is assumed to be the most recent month before the prediction date. If the round's data uses the opposite order, the "last 3 months" and "months since" features are read in reverse.
 - **One prediction date:** the model is trained on a single t0 (2025-08-01) and assumes the round's data follows the same definitions.
+
+## Homework 7 refinement
+
+Automated round 2 scored 5.35 (lower is better; rank 10 of 11, best 0.78). The round packages are busy and hot: the round 1 package has 26 past GHSAs, 18 of them in the last 12 months. EV's top bucket predicts only 0.36 moderate for every such package.
+
+**New float strategies** (`src/model/counts.py`, chosen by `default_float_strategy` in `model_meta.json`):
+- **HR (half-rate):** per severity, the GHSAs in the last 12 months (M0..M11) divided by 8, i.e. half of the 90-day rate.
+- **HRMAX (default):** per severity, the larger of the EV value and the HR value. Packages without recent GHSAs keep the small EV values.
+- **EV:** unchanged, kept for rollback.
+
+**Error per row, summed over the 5 targets** (1,912 training rows; EV cross-validated, buckets fitted on 4/5; busy = 7+ past GHSAs, 31 rows; hot = 5+ GHSAs in the last 12 months, 5 rows):
+
+| Strategy | MSE all | MAE all | MSE busy | MAE busy | MSE hot | MAE hot |
+|---|---|---|---|---|---|---|
+| EV | **0.0278** | 0.0352 | 0.920 | 0.738 | 2.861 | **1.496** |
+| HR | 0.0281 | **0.0335** | 0.842 | **0.649** | 2.784 | 1.825 |
+| **HRMAX (default)** | 0.0283 | 0.0482 | **0.840** | 0.786 | **2.770** | 1.847 |
+
+HRMAX has the lowest squared error on busy and hot rows, and overall it is about level with all zeros (0.0282) and EV (0.0278). For the round 1 package it gives low 0.375, moderate 1.75, high 0.125, critical 0.030 and unknown 0 (EV: 0.061 / 0.364 / 0.121 / 0.030 / 0).
+
+**Caveats:** the busy and hot groups are tiny (11 and 3 positive rows), the divisor 8 was chosen on this same data, the data is from 2025, and no training package is as hot as the round packages.
+
+**Use and rollback:**
+- `predict.py ... --float-strategy EV|HR|HRMAX` overrides the default; the screen shows `Float strategy ...`.
+- The service logs `[run_model] strategy=HRMAX ...`. The environment variable `PCOM_FLOAT_STRATEGY=EV` (`docker run -e ...`) switches it back to EV without a rebuild; see `docs/vm_deploy.md`.
+- The uploaded file is unchanged in form: 1 row, the 5 Prediction_Schema names, floats >= 0 with 6 decimals, all zeros if the input cannot be used.

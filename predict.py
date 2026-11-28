@@ -2,6 +2,7 @@
 
 Usage:
   .venv\\Scripts\\python.exe predict.py input.csv [-o output.csv] [--strategy S0|S1|S2]
+                             [--float] [--float-strategy EV|HR|HRMAX]
 
 Writes exactly the 5 target columns, one row per input row in the same order, and prints a
 table for typing the results into a form. Exit codes: 0 = done; 1 = output written but some or
@@ -30,6 +31,7 @@ TARGET_COLUMNS = [
 ]
 MISSING_TOKENS = {"", "null", "na", "nan", "none"}
 STRATEGIES = ("S0", "S1", "S2")
+FLOAT_STRATEGIES = ("EV", "HR", "HRMAX")  # the same names as src/model/counts.py
 
 
 def warn(message):
@@ -96,10 +98,28 @@ def load_lightgbm():
     return lightgbm
 
 
-def score_rows(rows, strategy):
-    """Return (counts, scores, rows that fell back to zeros, expected values or None) per row.
+def resolve_float_strategy(meta, requested=None):
+    """The float strategy to use: the requested one, else default_float_strategy, else EV.
 
-    The expected values (strategy EV, floats) are None when model_meta.json has no EV settings.
+    An unknown requested name raises; an unknown name in model_meta.json warns and uses EV.
+    """
+    if requested:
+        if requested not in FLOAT_STRATEGIES:
+            raise ValueError(f"unknown float strategy {requested!r}; choose one of {', '.join(FLOAT_STRATEGIES)}")
+        return requested
+    default = meta.get("counts", {}).get("default_float_strategy") or "EV"
+    if default not in FLOAT_STRATEGIES:
+        warn(f"model_meta.json names an unknown float strategy {default!r}; using EV")
+        return "EV"
+    return default
+
+
+def score_rows(rows, strategy, float_strategy=None, details=None):
+    """Return (counts, scores, rows that fell back to zeros, float values or None) per row.
+
+    The float values come from float_strategy (EV, HR or HRMAX; default: default_float_strategy in
+    model_meta.json, else EV). They are None when model_meta.json has no EV settings. If details is
+    a dict, the float strategy used is stored in details["float_strategy"].
     """
     import numpy as np
 
@@ -122,6 +142,9 @@ def score_rows(rows, strategy):
                            "rebuild the model with: python -m src.model.build")
     settings = meta["counts"]["strategies"]
     strategy = strategy or meta["counts"]["default_strategy"]
+    float_strategy = resolve_float_strategy(meta, float_strategy)
+    if details is not None:
+        details["float_strategy"] = float_strategy
 
     failed = np.zeros(len(rows), dtype=bool)
     try:
@@ -141,7 +164,7 @@ def score_rows(rows, strategy):
     counts[failed] = 0
     expected = None
     if "EV" in settings:
-        expected = ct.predict_expected(scores, settings)
+        expected = ct.predict_float(scores, rows, settings, float_strategy)
         expected[failed] = 0.0
         expected = expected.tolist()
     empty = np.isnan(X).all(axis=1) & ~failed
@@ -154,7 +177,17 @@ def score_rows(rows, strategy):
     else:
         print(f"All {len(ft.INPUT_COLUMNS)} expected input columns found")
     print(f"Strategy {strategy}: {meta['counts']['strategies'].get(strategy, {}) and strategy_note(strategy, settings)}")
+    print(f"Float strategy {float_strategy}: {float_strategy_note(float_strategy, settings)}")
     return counts.tolist(), scores.tolist(), int(failed.sum()), expected
+
+
+def float_strategy_note(strategy, settings):
+    divisor = settings.get("HR", {}).get("divisor", 8)
+    if strategy == "HR":
+        return f"per severity, GHSAs in the last 12 months / {divisor:g}"
+    if strategy == "HRMAX":
+        return f"per severity, max(EV bucket mean, GHSAs in the last 12 months / {divisor:g})"
+    return "EV bucket means"
 
 
 def strategy_note(strategy, settings):
@@ -175,10 +208,12 @@ def print_table(rows, counts, scores):
         print(f"{index:>4}  {purl:<{width}}  " + " ".join(f"{value:>4}" for value in count) + f"  {shown:>7}")
 
 
-def print_float_table(rows, expected):
-    """Expected counts (strategy EV), rounded to 3 decimals, for a form that asks for floats."""
+def print_float_table(rows, expected, float_strategy=None):
+    """Float values (EV, HR or HRMAX), rounded to 3 decimals, for a form that asks for floats."""
     width = min(60, max([len(row.get("purl") or "") for row in rows] + [4]))
     print("\nValues for the form (float):")
+    if float_strategy:
+        print(f"(float strategy {float_strategy})")
     print(f"{'row':>4}  {'purl':<{width}}  {'low':>7} {'mod':>7} {'high':>7} {'crit':>7} {'unkn':>7}")
     for index, (row, values) in enumerate(zip(rows, expected), 1):
         purl = (row.get("purl") or "-")[:width]
@@ -194,7 +229,9 @@ def main(argv=None):
     parser.add_argument("-o", "--output", help="output CSV (default: <input name>_predictions.csv next to the input)")
     parser.add_argument("--strategy", choices=STRATEGIES, help="score-to-counts rule (default: from model_meta.json, S2)")
     parser.add_argument("--float", dest="as_float", action="store_true",
-                        help="write the expected values (floats, strategy EV) to the output CSV instead of integers")
+                        help="write the float values (see --float-strategy) to the output CSV instead of integers")
+    parser.add_argument("--float-strategy", choices=FLOAT_STRATEGIES,
+                        help="float values: EV, HR (half-rate) or HRMAX (default: from model_meta.json)")
     args = parser.parse_args(argv)
 
     input_path = Path(args.input)
@@ -217,9 +254,10 @@ def main(argv=None):
 
     exit_code = 0
     expected = None
+    details = {}
     if rows:
         try:
-            counts, scores, failed, expected = score_rows(rows, args.strategy)
+            counts, scores, failed, expected = score_rows(rows, args.strategy, args.float_strategy, details)
             if failed:
                 exit_code = 1
         except Exception as error:
@@ -233,7 +271,7 @@ def main(argv=None):
             warn("model_meta.json has no EV settings; float values are zeros (rebuild: python -m src.model.build)")
             expected = [[0.0] * 5 for _ in rows]
             exit_code = max(exit_code, 1) if args.as_float else exit_code
-        print_float_table(rows, expected)
+        print_float_table(rows, expected, details.get("float_strategy"))
     else:
         counts = []
         warn("the input has no data rows; writing a header-only file")

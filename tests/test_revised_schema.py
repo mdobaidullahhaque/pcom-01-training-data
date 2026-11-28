@@ -133,3 +133,16 @@ def test_run_model_on_revised_input_gives_one_valid_row():
     assert output.shape == (1, 5)
     assert (output.to_numpy(dtype=float) >= 0).all()
     assert check_prediction_csv(service.to_csv_text(output)) == []
+
+
+@needs_xlsx
+@pytest.mark.parametrize("strategy", ["EV", "HR", "HRMAX", ""])
+def test_output_headers_match_the_prediction_schema_for_every_float_strategy(strategy, monkeypatch):
+    from service import main as service
+
+    monkeypatch.setenv(service.FLOAT_STRATEGY_ENV, strategy)
+    output = service.run_model(pd.read_csv(REVISED_INPUT, dtype=str))
+    text = service.to_csv_text(output)
+    assert text.splitlines()[0].split(",") == field_names("Prediction_Schema")
+    assert output.shape == (1, 5) and (output.to_numpy(dtype=float) >= 0).all()
+    assert all(round(value, 6) == value for value in output.iloc[0])

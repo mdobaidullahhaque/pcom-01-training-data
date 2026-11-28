@@ -105,3 +105,69 @@ def test_saved_settings_reproduce_the_table():
         result = ct.evaluate(ct.predict_counts(scores, meta["strategies"], strategy), counts)
         assert result == pytest.approx(meta["evaluation_on_oof"][strategy])
     assert meta["default_strategy"] in ct.STRATEGIES
+
+
+# --- Homework 7: half-rate float strategies (HR, HRMAX) ---
+
+def hand_made_row():
+    """3 low in M0, 5 moderate over M0/M2/M11, 1 high in M11, nothing critical, 2 unknown in M5;
+    plus a GHSA in a month outside M0..M11 and junk cells that must be ignored."""
+    row = {f"ghsa_{s}_count_M{m}": "0" for s in ct.SEVERITIES for m in range(12)}
+    row.update({"ghsa_low_count_M0": "3", "ghsa_moderate_count_M0": "2", "ghsa_moderate_count_M2": "1.0",
+                "ghsa_moderate_count_M11": "2", "ghsa_high_count_M11": "1", "ghsa_unknown_count_M5": "2",
+                "ghsa_critical_count_M12": "9", "ghsa_critical_count_M3": "", "ghsa_high_count_M4": "junk",
+                "ghsa_low_count_M7": "-4", "ghsa_moderate_count": "40"})
+    return row
+
+
+def test_half_rate_math_on_a_hand_made_row():
+    result = ct.half_rate([hand_made_row()])
+    assert result.shape == (1, 5)
+    assert result[0].tolist() == [3 / 8, 5 / 8, 1 / 8, 0.0, 2 / 8]
+    assert ct.half_rate([hand_made_row()], divisor=4)[0].tolist() == [0.75, 1.25, 0.25, 0.0, 0.5]
+
+
+def test_half_rate_is_zero_without_ghsa_columns():
+    assert ct.half_rate([{}, None, {"ghsa_low_count_M0": None}]).tolist() == [[0.0] * 5] * 3
+
+
+def test_hrmax_is_at_least_ev_and_hr_per_severity():
+    settings = {"EV": {"edges": [0.0, 1.0, 6.0], "means": [[0, 0, 0.001, 0, 0], [0.01, 0.02, 0, 0, 0], [0.06, 0.36, 0.12, 0.03, 0]]}}
+    rows = [hand_made_row(), {}, hand_made_row(), {"ghsa_critical_count_M1": "8"}]
+    scores = [26.0, 0.2, np.nan, 7.0]
+    ev = ct.predict_float(scores, rows, settings, "EV")
+    hr = ct.predict_float(scores, rows, settings, "HR")
+    hrmax = ct.predict_float(scores, rows, settings, "HRMAX")
+    assert (hrmax >= ev).all() and (hrmax >= hr).all() and (hrmax >= 0).all()
+    assert np.array_equal(hrmax, np.maximum(ev, hr))
+    assert hrmax[1].tolist() == ev[1].tolist()  # no recent GHSAs: keeps the small EV values
+    assert hrmax[3, 3] == 1.0  # 8 critical / 8
+
+
+def test_unknown_float_strategy_raises():
+    with pytest.raises(ValueError):
+        ct.predict_float([1.0], [{}], {"EV": {"edges": [0.0], "means": [[0] * 5]}}, "XX")
+
+
+@pytest.mark.skipif(not META_PATH.exists(), reason="model not trained yet")
+def test_hrmax_is_at_least_ev_on_all_training_rows():
+    meta = json.loads(META_PATH.read_text(encoding="utf-8"))["counts"]
+    scores, _, purls = ct.load_oof(with_purls=True)
+    training = ct.load_training_rows()
+    rows = [training[purl] for purl in purls]
+    ev = ct.predict_float(scores, rows, meta["strategies"], "EV")
+    assert (ct.predict_float(scores, rows, meta["strategies"], "HRMAX") >= ev).all()
+
+
+@pytest.mark.skipif(not META_PATH.exists(), reason="model not trained yet")
+def test_saved_float_settings_reproduce_the_float_table():
+    meta = json.loads(META_PATH.read_text(encoding="utf-8"))["counts"]
+    assert meta["default_float_strategy"] in ct.FLOAT_STRATEGIES
+    assert meta["strategies"]["HR"]["divisor"] == ct.HALF_RATE_DIVISOR
+    scores, counts, purls = ct.load_oof(with_purls=True)
+    training = ct.load_training_rows()
+    table = ct.float_evaluation(scores, counts, [training[purl] for purl in purls])
+    flat = lambda t: {(s, g, k): v for s, groups in t.items() for g, values in groups.items() for k, v in values.items()}
+    assert flat(table) == pytest.approx(flat(meta["float_evaluation"]))
+    # EV cross-validated here is the same as in cross_validated()
+    assert table["EV"]["all"]["mse_sum"] == pytest.approx(meta["cross_validated"]["EV"]["mse_sum"])

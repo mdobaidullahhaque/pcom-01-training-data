@@ -57,7 +57,7 @@ The image is based on the full `python:3.12` image, not `python:3.12-slim`. Ligh
 
 The build checks two things and fails at the step that breaks:
 - `libgomp.so.1` must be present. If it is missing, the build stops with `ERROR: libgomp.so.1 not found in the base image`.
-- The model must load and score. The build ends with `[self-check] OK: score=... output=[...]`. A wrong model hash, for example, fails here instead.
+- The model must load and score. The build ends with `[self-check] OK: strategy=HRMAX score=... output=[...]`. A wrong model hash, for example, fails here instead.
 
 If the build fails, the container you are running now keeps running.
 
@@ -107,10 +107,12 @@ POST /predict -> {"status":"prediction started"}
 Upload received 0.xx s after POST /predict
 --- prediction.csv ---
 target_ghsa_low_count_90d,target_ghsa_moderate_count_90d,target_ghsa_high_count_90d,target_ghsa_critical_count_90d,target_ghsa_unknown_count_90d
-0.060606,0.363636,0.121212,0.030303,0.000000
+0.375000,1.750000,0.125000,0.030303,0.000000
 ----------------------
 VALID: 1 row, 5 target headers, plain non-negative numbers
 ```
+
+These are the HRMAX values (Homework 7 default). With the old EV strategy (pcom-entry-2, or `PCOM_FLOAT_STRATEGY=EV`, see Rollback) the line is `0.060606,0.363636,0.121212,0.030303,0.000000`. To test the revised-schema input too, copy and pass `tests/data/revised_schema_input.csv` the same way; it gives the same values.
 
 The exit code is 0 when the upload is valid. The files copied to `/tmp` are gone after the next redeploy.
 
@@ -135,11 +137,11 @@ Each round writes these lines:
 ```
 [predict] started: download=... upload=...
 [predict] downloaded 16217 bytes in 0.01s
-[run_model] rows=18 chosen=row 18 (newest published_at, published_at=2026-06-17T10:33:28.065Z) score=26.3859 output=[0.060606, 0.363636, 0.121212, 0.030303, 0.0] time=0.52s
+[run_model] strategy=HRMAX rows=18 chosen=row 18 (newest published_at, published_at=2026-06-17T10:33:28.065Z) score=26.3859 output=[0.375, 1.75, 0.125, 0.030303, 0.0] time=0.52s
 [predict] uploaded (HTTP 200) in 0.60s total. Evaluation result: {...}
 ```
 
-If you see `[run_model] FALLBACK all zeros (...)`, the input could not be used and zeros were uploaded. The reason is in the brackets.
+`strategy=` shows which float values were uploaded: `HRMAX` (default), `HR` or `EV`. If you see `[run_model] FALLBACK all zeros (...)`, the input could not be used and zeros were uploaded. The reason is in the brackets.
 
 ## Rollback
 
@@ -149,6 +151,16 @@ If the new image misbehaves, go back to the previous one:
 docker stop ml-api && docker rm ml-api
 docker run -d --name ml-api --restart unless-stopped -p 80:8000 -p 8000:8000 ml-prediction-api:previous
 ```
+
+**Back to the old EV values without a rebuild:** run the current image with `PCOM_FLOAT_STRATEGY=EV` (also accepted: `HR`, `HRMAX`). Keep both port mappings and the restart policy:
+
+```bash
+docker stop ml-api && docker rm ml-api
+docker run -d --name ml-api --restart unless-stopped -e PCOM_FLOAT_STRATEGY=EV -p 80:8000 -p 8000:8000 ml-prediction-api:pcom
+docker logs --tail 5 ml-api   # the next round's [run_model] line shows strategy=EV
+```
+
+Leave out `-e PCOM_FLOAT_STRATEGY=...` to use the default from `model_meta.json` again.
 
 ## Cleanup (optional, later)
 

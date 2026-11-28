@@ -263,7 +263,8 @@ def expected_values(rows):
     X, names = ft.build_features(rows, None, use_reference_features=False)
     booster = lgb.Booster(model_file=str(config.MODEL_DIR / "model.txt"))
     scores = np.nan_to_num(X[:, names.index("ghsa_total")]) + 0.5 * booster.predict(X)
-    return ct.predict_expected(scores, meta["counts"]["strategies"])
+    strategy = meta["counts"].get("default_float_strategy", "EV")
+    return ct.predict_float(scores, rows, meta["counts"]["strategies"], strategy)
 
 
 def test_float_table_is_printed_and_integers_stay_the_default(clone, tmp_path, training_rows, core_columns):
@@ -288,7 +289,7 @@ def test_float_option_writes_decimals(clone, tmp_path, training_rows, core_colum
     assert table[0] == TARGETS and len(table) == 9
     assert all("." in value for row in table[1:] for value in row)
     written = np.array([[float(value) for value in row] for row in table[1:]])
-    assert (written >= 0).all() and (written[:, 4] == 0).all()
+    assert (written >= 0).all()
     assert np.allclose(written, expected_values(rows), atol=1e-6)
 
 
